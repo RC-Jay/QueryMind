@@ -1,0 +1,89 @@
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import Column, Integer, Text, Boolean, DateTime, CheckConstraint, func
+from config import get_settings
+import pathlib
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(Text, unique=True, nullable=False)
+    name = Column(Text, nullable=False)
+    password_hash = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_superuser = Column(Boolean, default=False, nullable=False)
+    force_password_change = Column(Boolean, default=True, nullable=False)
+    created_by = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+    id = Column(Text, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    title = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    id = Column(Text, primary_key=True)
+    conversation_id = Column(Text, nullable=False)
+    role = Column(Text, nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=True)
+    conversation_id = Column(Text, nullable=True)
+    question = Column(Text, nullable=True)
+    sql_executed = Column(Text, nullable=True)
+    rows_returned = Column(Integer, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class BusinessConfig(Base):
+    __tablename__ = "business_config"
+    __table_args__ = (CheckConstraint("id = 1", name="singleton"),)
+    id = Column(Integer, primary_key=True, default=1)
+    business_name = Column(Text, nullable=False)
+    business_description = Column(Text, nullable=False)
+    db_url_encrypted = Column(Text, nullable=False)
+    domain_context = Column(Text, nullable=False)
+    business_rules = Column(Text, nullable=False)
+    table_descriptions = Column(Text, nullable=False)
+    kpi_definitions = Column(Text, nullable=False)
+    starter_questions = Column(Text, nullable=False)
+    explain_cost_threshold = Column(Integer, default=50000, nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+def _make_engine():
+    settings = get_settings()
+    db_path = pathlib.Path(settings.analytics_db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    return create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
+
+
+engine = _make_engine()
+AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+
+async def init_db() -> None:
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def get_session() -> AsyncSession:
+    async with AsyncSessionLocal() as session:
+        yield session

@@ -1,0 +1,132 @@
+# QueryMind Analytics
+
+An AI-powered analytics platform that lets executive teams query their live business database in plain English and receive instant answers as charts, tables, and metrics.
+
+Built as a standalone application — completely separate from the business's main platform. First deployed for **ChangePay**, an eCommerce platform running across college campuses in India.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  Next.js Frontend (port 3000)               │
+│  Chat UI · KPI Panel · Admin · Auth         │
+└────────────────┬────────────────────────────┘
+                 │ HTTP / SSE
+┌────────────────▼────────────────────────────┐
+│  FastAPI Backend (port 8000)                │
+│  AI Agent · Tool Loop · JWT Auth            │
+│  SQLite (analytics metadata)                │
+└────────────────┬────────────────────────────┘
+                 │ read-only
+┌────────────────▼────────────────────────────┐
+│  Business PostgreSQL DB (live)              │
+│  Connection URL stored encrypted in SQLite  │
+└─────────────────────────────────────────────┘
+```
+
+**Key design principle:** Everything business-specific (DB URL, domain model, KPI queries, starter questions) lives in a `business_config` table — not in application code. The same codebase can serve any business by configuring a new deployment.
+
+---
+
+## Project Structure
+
+```
+DataAnalysis/
+├── backend/          # FastAPI Python backend
+├── frontend/         # Next.js TypeScript frontend
+├── data/             # SQLite analytics DB (created on first run)
+└── .env              # Secrets — never commit this
+```
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.12+
+- Node.js 18+
+- PostgreSQL running with the target business database accessible
+
+### 1. Set up secrets
+
+The `.env` file at the project root is already populated if you ran the setup scripts. Verify it exists:
+
+```bash
+cat .env
+```
+
+Required variables:
+```
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_API_KEY=
+AZURE_OPENAI_DEPLOYMENT=
+AZURE_OPENAI_API_VERSION=
+ANALYTICS_DB_PATH=
+CONFIG_ENCRYPTION_KEY=
+JWT_SECRET_KEY=
+```
+
+### 2. Start the backend
+
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn main:app --port 8000 --reload
+```
+
+### 3. Start the frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+### 4. Open the app
+
+Navigate to **http://localhost:3000**
+
+---
+
+## First-Time Setup (new deployment)
+
+```bash
+cd backend
+source .venv/bin/activate
+
+# 1. Create the superuser (run once)
+python scripts/create_superuser.py
+
+# 2a. ChangePay deployment — seed domain config automatically
+python scripts/seed_changepay_config.py
+
+# 2b. Any other business — log in as superuser and configure via
+#     Admin → Business Setup in the UI
+```
+
+---
+
+## Default Credentials (ChangePay deployment)
+
+| Field | Value |
+|-------|-------|
+| Email | `admin@changepay.in` |
+| Password | `Admin@12345` |
+
+> Change this password immediately after first login in a production environment.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| AI | Azure OpenAI GPT-4o-mini (function calling) |
+| Backend | Python 3.12, FastAPI, asyncpg, SQLAlchemy (aiosqlite) |
+| Frontend | Next.js 16, TypeScript, Tailwind CSS, Zustand |
+| Charts | Plotly.js |
+| Auth | Custom JWT (access + refresh token, httpOnly cookie) |
+| Analytics DB | SQLite (users, conversations, business config) |
+| Business DB | PostgreSQL (read-only, connection stored encrypted) |
