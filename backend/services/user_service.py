@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from db.analytics import User
 from services.auth_service import hash_password
-from fastapi import HTTPException, status
+from exceptions import ConflictError, ValidationError, NotFoundError
 
 
 async def list_users(session: AsyncSession) -> list[User]:
@@ -19,7 +19,7 @@ async def create_user(
 ) -> User:
     existing = await session.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+        raise ConflictError("Email already registered")
     user = User(
         email=email,
         name=name,
@@ -37,11 +37,11 @@ async def create_user(
 
 async def deactivate_user(session: AsyncSession, user_id: int, requesting_user_id: int) -> User:
     if user_id == requesting_user_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot deactivate yourself")
+        raise ValidationError("Cannot deactivate yourself")
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise NotFoundError("User not found")
     user.is_active = False
     await session.commit()
     await session.refresh(user)
@@ -52,7 +52,7 @@ async def reactivate_user(session: AsyncSession, user_id: int) -> User:
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise NotFoundError("User not found")
     user.is_active = True
     await session.commit()
     await session.refresh(user)
@@ -63,7 +63,7 @@ async def reset_password(session: AsyncSession, user_id: int, new_password: str)
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise NotFoundError("User not found")
     user.password_hash = hash_password(new_password)
     user.force_password_change = True
     await session.commit()

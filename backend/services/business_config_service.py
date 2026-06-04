@@ -5,7 +5,7 @@ from sqlalchemy import select
 from db.analytics import BusinessConfig
 from db.business_db import test_connection, init_pool
 from config import get_settings
-from fastapi import HTTPException, status
+from exceptions import ServiceUnavailableError, ValidationError
 
 
 def _fernet() -> Fernet:
@@ -28,9 +28,8 @@ async def get_config(session: AsyncSession) -> BusinessConfig | None:
 async def get_config_or_raise(session: AsyncSession) -> BusinessConfig:
     config = await get_config(session)
     if config is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Business not configured yet. Run the seed script or configure via admin UI.",
+        raise ServiceUnavailableError(
+            "Business not configured yet. Run the seed script or configure via admin UI."
         )
     return config
 
@@ -39,7 +38,7 @@ async def update_config(session: AsyncSession, data: dict, new_db_url: str | Non
     config = await get_config(session)
     if config is None:
         if new_db_url is None:
-            raise HTTPException(status_code=400, detail="DB URL required for first setup")
+            raise ValidationError("DB URL required for first setup")
         config = BusinessConfig(id=1, db_url_encrypted=encrypt_url(new_db_url))
         session.add(config)
     elif new_db_url is not None:

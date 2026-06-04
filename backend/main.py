@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from db.analytics import init_db, AsyncSessionLocal
@@ -6,6 +7,7 @@ from db.business_db import close_pool
 from services.business_config_service import ensure_pool_from_config
 from api.routes import auth, admin, chat, kpi
 from config import get_settings
+from exceptions import AppError
 
 
 @asynccontextmanager
@@ -33,6 +35,12 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Central translation of domain errors → HTTP responses.
+    # Lets the service layer stay free of any FastAPI/HTTP knowledge.
+    @app.exception_handler(AppError)
+    async def app_error_handler(request: Request, exc: AppError):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
     app.include_router(auth.router)
     app.include_router(admin.router)
     app.include_router(chat.router)

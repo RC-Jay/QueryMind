@@ -3,8 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from db.analytics import get_session, User
 from services.auth_service import (
-    verify_password, create_access_token, create_refresh_token,
-    decode_token, InvalidTokenError,
+    verify_password, create_access_token, create_refresh_token, decode_token,
 )
 from services.user_service import change_own_password
 from api.deps import get_current_user
@@ -53,10 +52,8 @@ async def login(body: LoginRequest, response: Response, session: AsyncSession = 
 async def refresh(response: Response, refresh_token: str | None = Cookie(default=None), session: AsyncSession = Depends(get_session)):
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
-    try:
-        payload = decode_token(refresh_token, expected_type="refresh")
-    except InvalidTokenError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    # decode_token raises InvalidTokenError → 401 via the central handler
+    payload = decode_token(refresh_token, expected_type="refresh")
     result = await session.execute(select(User).where(User.id == int(payload["sub"])))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:

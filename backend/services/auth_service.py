@@ -9,10 +9,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 from jose import JWTError, jwt
 from config import get_settings
-
-
-class InvalidTokenError(Exception):
-    """Raised when a JWT is malformed, expired, or of the wrong type."""
+from exceptions import InvalidTokenError
 
 
 def hash_password(plain: str) -> str:
