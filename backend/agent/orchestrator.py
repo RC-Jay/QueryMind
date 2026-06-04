@@ -41,8 +41,10 @@ class AgentOrchestrator:
         self._registry = registry
 
     @classmethod
-    def build(cls, config: BusinessConfig, llm: LLMProvider, pool) -> "AgentOrchestrator":
-        """Wire the standard toolset with an injected DB pool."""
+    def build(cls, config: BusinessConfig, llm: LLMProvider, pool, broker=None) -> "AgentOrchestrator":
+        """Wire the standard toolset with an injected DB pool and confirmation broker."""
+        from services.confirmation import InMemoryConfirmationBroker
+        broker = broker or InMemoryConfirmationBroker()
         registry = ToolRegistry()
         kpi_defs = (
             json.loads(config.kpi_definitions)
@@ -50,7 +52,7 @@ class AgentOrchestrator:
             else config.kpi_definitions
         )
         registry.register(GetSchemaTool(pool))
-        registry.register(ExecuteQueryTool(pool, cost_threshold=config.explain_cost_threshold))
+        registry.register(ExecuteQueryTool(pool, broker, cost_threshold=config.explain_cost_threshold))
         registry.register(GenerateChartTool())
         registry.register(GetKPISnapshotTool(pool, kpi_definitions=kpi_defs))
         return cls(config, llm, registry)

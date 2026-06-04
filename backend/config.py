@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 7
 
+    # Redis — used for the expensive-query confirmation signal (and future caching).
+    # Empty → falls back to an in-process broker (single-worker / local dev / tests).
+    redis_url: str = ""
+
     # App
     cors_origins: str = "http://localhost:3000"
     environment: str = "development"

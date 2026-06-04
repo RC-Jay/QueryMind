@@ -2,9 +2,10 @@ import json
 import asyncio
 import pytest
 from tools.schema_tool import GetSchemaTool
-from tools.query_tool import ExecuteQueryTool, resolve_pending
+from tools.query_tool import ExecuteQueryTool
 from tools.chart_tool import GenerateChartTool
 from tools.kpi_tool import GetKPISnapshotTool
+from services.confirmation import InMemoryConfirmationBroker
 from tests.conftest import FakeConn, FakePool
 
 
@@ -29,7 +30,7 @@ async def test_schema_tool_returns_columns():
 # ── query tool ────────────────────────────────────────────────────────────────
 
 async def test_query_tool_blocks_unsafe_sql():
-    tool = ExecuteQueryTool(FakePool(FakeConn()), cost_threshold=50000)
+    tool = ExecuteQueryTool(FakePool(FakeConn()), InMemoryConfirmationBroker(), cost_threshold=50000)
     result = await tool.execute(_noop_send, sql="DROP TABLE users", description="x")
     assert result.cancelled
     assert "blocked" in result.reason.lower()
@@ -37,7 +38,7 @@ async def test_query_tool_blocks_unsafe_sql():
 
 async def test_query_tool_returns_table_for_cheap_query():
     conn = FakeConn(rows=[{"campus": "IIT", "revenue": 1000}], explain_cost=10.0)
-    tool = ExecuteQueryTool(FakePool(conn), cost_threshold=50000)
+    tool = ExecuteQueryTool(FakePool(conn), InMemoryConfirmationBroker(), cost_threshold=50000)
     result = await tool.execute(_noop_send, sql="SELECT campus, revenue FROM order_order", description="rev")
     assert result.type == "table"
     assert result.data["columns"] == ["campus", "revenue"]
@@ -47,7 +48,8 @@ async def test_query_tool_returns_table_for_cheap_query():
 
 async def test_query_tool_expensive_query_requires_confirmation_then_proceeds():
     conn = FakeConn(rows=[{"x": 1}], explain_cost=999999.0)
-    tool = ExecuteQueryTool(FakePool(conn), cost_threshold=50000)
+    broker = InMemoryConfirmationBroker()
+    tool = ExecuteQueryTool(FakePool(conn), broker, cost_threshold=50000)
 
     events = []
     async def capture(event):
@@ -58,7 +60,7 @@ async def test_query_tool_expensive_query_requires_confirmation_then_proceeds():
 
     conf = next(e for e in events if e["event"] == "confirmation_required")
     assert conf["data"]["estimated_cost"] > 50000
-    resolve_pending(conf["data"]["query_id"], approved=True)
+    await broker.signal(conf["data"]["query_id"], approved=True)
 
     result = await task
     assert result.type == "table"
@@ -93,7 +95,8 @@ async def test_no_connection_held_during_confirmation_wait():
     while waiting on the user, or pending confirmations would exhaust the pool."""
     conn = FakeConn(rows=[{"x": 1}], explain_cost=999999.0)
     pool = CountingPool(conn)
-    tool = ExecuteQueryTool(pool, cost_threshold=50000)
+    broker = InMemoryConfirmationBroker()
+    tool = ExecuteQueryTool(pool, broker, cost_threshold=50000)
 
     events = []
     async def capture(event):
@@ -105,7 +108,7 @@ async def test_no_connection_held_during_confirmation_wait():
     assert pool.active == 0, "a DB connection is being held during the human wait"
 
     conf = next(e for e in events if e["event"] == "confirmation_required")
-    resolve_pending(conf["data"]["query_id"], approved=True)
+    await broker.signal(conf["data"]["query_id"], approved=True)
     result = await task
 
     assert result.type == "table"
@@ -114,7 +117,8 @@ async def test_no_connection_held_during_confirmation_wait():
 
 async def test_query_tool_expensive_query_denied():
     conn = FakeConn(rows=[{"x": 1}], explain_cost=999999.0)
-    tool = ExecuteQueryTool(FakePool(conn), cost_threshold=50000)
+    broker = InMemoryConfirmationBroker()
+    tool = ExecuteQueryTool(FakePool(conn), broker, cost_threshold=50000)
 
     events = []
     async def capture(event):
@@ -123,7 +127,7 @@ async def test_query_tool_expensive_query_denied():
     task = asyncio.create_task(tool.execute(capture, sql="SELECT x FROM big", description="d"))
     await asyncio.sleep(0.05)
     conf = next(e for e in events if e["event"] == "confirmation_required")
-    resolve_pending(conf["data"]["query_id"], approved=False)
+    await broker.signal(conf["data"]["query_id"], approved=False)
 
     result = await task
     assert result.cancelled

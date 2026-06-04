@@ -1,29 +1,9 @@
-import asyncio
 import re
 from uuid import uuid4
 from typing import Callable, Awaitable
 from tools.base import BaseTool, ToolResult
 from db.safety import validate_sql
-
-# Shared dict of pending confirmations: query_id → (event, approved_flag)
-_pending: dict[str, tuple[asyncio.Event, list]] = {}
-
-
-def register_pending(query_id: str) -> tuple[asyncio.Event, list]:
-    event = asyncio.Event()
-    flag = [None]  # flag[0] = True/False when resolved
-    _pending[query_id] = (event, flag)
-    return event, flag
-
-
-def resolve_pending(query_id: str, approved: bool) -> bool:
-    entry = _pending.get(query_id)
-    if entry is None:
-        return False
-    event, flag = entry
-    flag[0] = approved
-    event.set()
-    return True
+from services.confirmation import ConfirmationBroker
 
 
 def _parse_explain_cost(plan_line: str) -> float:
@@ -46,8 +26,9 @@ class ExecuteQueryTool(BaseTool):
         "required": ["sql", "description"],
     }
 
-    def __init__(self, pool, cost_threshold: int = 50_000):
+    def __init__(self, pool, broker: ConfirmationBroker, cost_threshold: int = 50_000):
         self._pool = pool
+        self._broker = broker
         self.cost_threshold = cost_threshold
 
     async def execute(
@@ -114,7 +95,6 @@ class ExecuteQueryTool(BaseTool):
         waiting. Returns True (approved), False (denied), or None (timed out).
         """
         query_id = str(uuid4())
-        event, flag = register_pending(query_id)
         await send_event({
             "event": "confirmation_required",
             "data": {
@@ -126,14 +106,10 @@ class ExecuteQueryTool(BaseTool):
                 ),
             },
         })
-        try:
-            await asyncio.wait_for(event.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
-            _pending.pop(query_id, None)
+        approved = await self._broker.wait(query_id, timeout=30.0)
+        if approved is None:
             await send_event({"event": "confirmation_cancelled", "data": {"query_id": query_id}})
-            return None
-        _pending.pop(query_id, None)
-        return bool(flag[0])
+        return approved
 
     async def _run_query(self, sql: str) -> list:
         """Execute the SELECT on a fresh connection with a server-side timeout."""

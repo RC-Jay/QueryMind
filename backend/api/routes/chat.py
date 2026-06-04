@@ -16,7 +16,7 @@ from api.schemas.chat import (
     ChatRequest, ConfirmRequest, ConversationSummaryOut, MessageOut, ConversationDetailOut,
 )
 from api.schemas.common import DetailResponse
-from tools.query_tool import resolve_pending
+from services.confirmation import get_confirmation_broker
 from api.deps import get_current_user, get_business_pool
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -51,7 +51,7 @@ async def _run_agent(request: ChatRequest, current_user: User, session: AsyncSes
 
     llm_config = await get_llm_config_or_raise(session)
     llm = create_llm_provider(llm_config)
-    orchestrator = AgentOrchestrator.build(config, llm, pool)
+    orchestrator = AgentOrchestrator.build(config, llm, pool, broker=get_confirmation_broker())
 
     event_queue: asyncio.Queue = asyncio.Queue()
     collected_text = []
@@ -114,8 +114,8 @@ async def confirm_query(
     body: ConfirmRequest,
     _: User = Depends(get_current_user),
 ):
-    resolved = resolve_pending(query_id, body.approved)
-    if not resolved:
+    delivered = await get_confirmation_broker().signal(query_id, body.approved)
+    if not delivered:
         raise HTTPException(status_code=404, detail="Query confirmation expired or not found")
     return DetailResponse(detail="Confirmation received")
 

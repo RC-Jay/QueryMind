@@ -49,6 +49,7 @@ backend/
 ├── db/
 │   ├── analytics.py            # SQLAlchemy async engine + ORM models (SQLite via aiosqlite)
 │   ├── business_db.py          # asyncpg pool — built from decrypted business_config.db_url
+│   ├── redis_client.py         # shared async Redis client (confirmation broker, future cache)
 │   └── safety.py               # SQLSafetyValidator — sqlglot AST + keyword blocklist
 │
 ├── services/                   # Pure business logic — ZERO FastAPI imports
@@ -57,6 +58,7 @@ backend/
 │   ├── crypto.py               # Fernet encrypt/decrypt/mask for secrets at rest
 │   ├── business_config_service.py  # Business/domain config CRUD (DB URL encrypted)
 │   ├── llm_config_service.py   # LLM provider + credentials CRUD (API key encrypted)
+│   ├── confirmation.py         # ConfirmationBroker (Redis BLPOP + in-process fallback)
 │   └── conversation_service.py # Conversation + message persistence
 │
 ├── scripts/
@@ -196,9 +198,15 @@ The `/api/chat/` endpoint streams Server-Sent Events. Each event has `event:` an
 
 Fine for the current single-instance, few-executives deployment; address before scaling:
 
-- **In-memory confirmation state** — the pending-confirmation registry (`tools/query_tool._pending`) lives in process memory, so `POST /api/chat/confirm/{id}` must hit the same worker that paused the query. Running multiple workers/instances needs shared state (e.g. Redis). Likewise SSE streams are pinned to one worker.
 - **SQLite analytics DB** — single-writer; serializes conversation/message writes. Move to PostgreSQL for higher write concurrency.
 - **One pool per worker** — total Postgres connections = `workers × pool max_size`; tune against the server's `max_connections`.
+- **SSE streams are worker-pinned** — a streaming response lives on the worker that accepted it. Fine behind a load balancer (the connection stays open to that worker), but it means a worker restart drops in-flight streams.
+
+**Resolved:** cross-worker expensive-query confirmation. The confirm signal now
+flows through a `ConfirmationBroker` (`services/confirmation.py`) — Redis
+(`RPUSH`/`BLPOP`, race-free) when `REDIS_URL` is set, with an in-process
+fallback for single-worker/local/test. So `POST /api/chat/confirm/{id}` may land
+on any worker.
 
 ---
 

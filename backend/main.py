@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from db.analytics import init_db, AsyncSessionLocal
 from db.business_db import close_pool
+from db.redis_client import close_redis
 from services.business_config_service import ensure_pool_from_config
 from services.llm_config_service import ensure_llm_config_from_env
 from api.routes import auth, admin, chat, kpi
@@ -21,6 +22,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     await close_pool()
+    await close_redis()
 
 
 def create_app() -> FastAPI:

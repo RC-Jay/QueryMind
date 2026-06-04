@@ -13,6 +13,7 @@ os.environ.setdefault("AZURE_OPENAI_DEPLOYMENT", "test-deployment")
 os.environ.setdefault("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
 os.environ.setdefault("ANALYTICS_DB_PATH", "/tmp/querymind_test_analytics.db")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret")
+os.environ.setdefault("REDIS_URL", "")  # force in-process broker — never touch real Redis
 from cryptography.fernet import Fernet  # noqa: E402
 os.environ.setdefault("CONFIG_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
