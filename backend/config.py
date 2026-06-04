@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # Empty → falls back to an in-process broker (single-worker / local dev / tests).
     redis_url: str = ""
 
+    # Backpressure — caps concurrent agent runs per worker and bounds run time.
+    max_concurrent_chats: int = 8            # in-flight chat turns per worker
+    chat_acquire_timeout_seconds: float = 10 # wait this long for a slot before 429
+    agent_run_timeout_seconds: float = 120   # hard ceiling on one agent turn
+
     # App
     cors_origins: str = "http://localhost:3000"
     environment: str = "development"

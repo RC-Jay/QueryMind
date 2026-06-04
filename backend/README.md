@@ -103,6 +103,15 @@ uvicorn main:app --port 8000 --reload
 
 Health check: `curl http://localhost:8000/api/health`
 
+**Production:** run a few workers with an edge connection cap, e.g.
+```bash
+uvicorn main:app --workers 2 --limit-concurrency 64
+```
+`--workers` gives crash isolation + CPU-blip absorption (not single-request speed —
+that's LLM-bound). `--limit-concurrency` caps raw connections; the app separately
+caps concurrent agent runs via `MAX_CONCURRENT_CHATS`. Put PgBouncer in front of
+the business DB so worker count doesn't multiply Postgres connections.
+
 ## Migrations
 
 The analytics DB schema is owned by **Alembic**. Models live in `db/analytics.py`;
@@ -217,8 +226,7 @@ Fine for the current single-instance, few-executives deployment; address before 
 
 - **One pool per worker** — total Postgres connections = `workers × pool max_size`; tune against the server's `max_connections`.
 - **SSE streams are worker-pinned** — a streaming response lives on the worker that accepted it. Fine behind a load balancer (the connection stays open to that worker), but it means a worker restart drops in-flight streams.
-- **No backpressure** — nothing caps concurrent in-flight requests / SSE streams; a flood piles up coroutines and memory. Add a concurrency limit (semaphore / proxy connection cap) before opening to many users.
-- **CPU-bound work runs on the event loop** — `fig.to_json()` (chart tool), `json.dumps` of large table results, and `bcrypt` (login, ~50–100ms) block the loop while they run. Negligible for small aggregated charts / few users; offload with `asyncio.to_thread(...)` at three call sites (chart serialize, large-table serialize, bcrypt) before scaling.
+- **Edge connection cap** — the app limits concurrent *agent runs* (below), but the proxy/server should also cap raw connections per worker (`uvicorn --limit-concurrency`, or nginx `limit_conn`) so connection setup itself can't pile up.
 
 **Resolved:**
 - *Cross-worker expensive-query confirmation* — the confirm signal flows through
@@ -227,6 +235,11 @@ Fine for the current single-instance, few-executives deployment; address before 
   `POST /api/chat/confirm/{id}` may land on any worker.
 - *Analytics DB write concurrency* — moved from SQLite to PostgreSQL
   (`ANALYTICS_DB_URL`), schema managed by Alembic. SQLite remains a dev fallback.
+- *CPU-bound work on the event loop* — `bcrypt`, Plotly `to_json`, and large-table
+  stringification are offloaded with `asyncio.to_thread`.
+- *Backpressure* — a per-worker semaphore (`MAX_CONCURRENT_CHATS`) caps concurrent
+  agent runs; excess waits `CHAT_ACQUIRE_TIMEOUT_SECONDS` then gets a 429. A hard
+  `AGENT_RUN_TIMEOUT_SECONDS` ceiling stops a wedged turn from holding a slot.
 
 ---
 

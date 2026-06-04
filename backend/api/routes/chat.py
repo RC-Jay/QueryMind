@@ -19,8 +19,27 @@ from api.schemas.common import DetailResponse
 from services.confirmation import get_confirmation_broker
 from services.audit_service import record_queries
 from api.deps import get_current_user, get_business_pool
+from config import get_settings
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+# Backpressure: cap concurrent agent runs PER WORKER. Excess requests wait up to
+# chat_acquire_timeout_seconds for a slot, then get a 429 (graceful shedding)
+# rather than piling up unbounded coroutines/connections.
+_chat_slots = asyncio.Semaphore(get_settings().max_concurrent_chats)
+
+
+async def _acquire(sem: asyncio.Semaphore, timeout: float) -> bool:
+    """Try to acquire a semaphore within `timeout`. Returns False if it can't."""
+    try:
+        await asyncio.wait_for(sem.acquire(), timeout=timeout)
+        return True
+    except (asyncio.TimeoutError, TimeoutError):
+        return False
+
+
+async def _acquire_chat_slot() -> bool:
+    return await _acquire(_chat_slots, get_settings().chat_acquire_timeout_seconds)
 
 
 async def _sse_stream(generator):
@@ -62,9 +81,16 @@ async def _run_agent(request: ChatRequest, current_user: User, session: AsyncSes
         if event.get("event") == "text_delta":
             collected_text.append(event["data"].get("delta", ""))
 
+    run_timeout = get_settings().agent_run_timeout_seconds
+
     async def run_and_signal():
         try:
-            await orchestrator.run(history, request.message, send_event)
+            await asyncio.wait_for(
+                orchestrator.run(history, request.message, send_event),
+                timeout=run_timeout,
+            )
+        except (asyncio.TimeoutError, TimeoutError):
+            await event_queue.put({"event": "error", "data": {"message": "The request took too long and was stopped."}})
         except Exception as exc:
             await event_queue.put({"event": "error", "data": {"message": str(exc)}})
         finally:
@@ -110,9 +136,27 @@ async def chat(
     if current_user.force_password_change:
         raise HTTPException(status_code=403, detail="Password change required before using chat")
 
-    generator = await _run_agent(request, current_user, session, pool)
+    # Backpressure: acquire a concurrency slot, or shed load with 429.
+    if not await _acquire_chat_slot():
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="The assistant is at capacity right now. Please try again in a moment.",
+        )
+    try:
+        generator = await _run_agent(request, current_user, session, pool)
+    except Exception:
+        _chat_slots.release()  # never leak the slot if setup fails
+        raise
+
+    async def _streamed():
+        try:
+            async for chunk in _sse_stream(generator):
+                yield chunk
+        finally:
+            _chat_slots.release()  # released on completion or client disconnect
+
     return StreamingResponse(
-        _sse_stream(generator),
+        _streamed(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
