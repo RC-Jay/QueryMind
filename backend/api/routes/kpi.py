@@ -6,11 +6,12 @@ from services.auth_service import get_current_user
 from services.business_config_service import get_config_or_raise
 from api.deps import get_business_pool
 from tools.kpi_tool import _format_value
+from schemas.kpi import KPIItem, KPISnapshotOut
 
 router = APIRouter(prefix="/api/kpi", tags=["kpi"])
 
 
-@router.get("/snapshot")
+@router.get("/snapshot", response_model=KPISnapshotOut)
 async def kpi_snapshot(
     _=Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
@@ -26,9 +27,9 @@ async def kpi_snapshot(
                 formatted = _format_value(value, kpi.get("format", "number"))
             except Exception:
                 formatted = "N/A"
-            results.append({
-                "label": kpi["name"],
-                "value": formatted,
-                "icon": kpi.get("icon", ""),
-            })
-    return {"kpis": results}
+            results.append(KPIItem(
+                label=kpi["name"],
+                value=formatted,
+                icon=kpi.get("icon", ""),
+            ))
+    return KPISnapshotOut(kpis=results)

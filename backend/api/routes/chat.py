@@ -11,7 +11,10 @@ from services.conversation_service import (
     delete_conversation, append_message, get_messages, set_conversation_title,
 )
 from agent.orchestrator import AgentOrchestrator
-from agent.schemas import ChatRequest, ConfirmRequest
+from schemas.chat import (
+    ChatRequest, ConfirmRequest, ConversationSummaryOut, MessageOut, ConversationDetailOut,
+)
+from schemas.common import DetailResponse
 from tools.query_tool import resolve_pending
 from api.deps import get_business_pool
 
@@ -102,7 +105,7 @@ async def chat(
     )
 
 
-@router.post("/confirm/{query_id}")
+@router.post("/confirm/{query_id}", response_model=DetailResponse)
 async def confirm_query(
     query_id: str,
     body: ConfirmRequest,
@@ -111,27 +114,27 @@ async def confirm_query(
     resolved = resolve_pending(query_id, body.approved)
     if not resolved:
         raise HTTPException(status_code=404, detail="Query confirmation expired or not found")
-    return {"detail": "Confirmation received"}
+    return DetailResponse(detail="Confirmation received")
 
 
-@router.get("/conversations")
+@router.get("/conversations", response_model=list[ConversationSummaryOut])
 async def list_convs(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     convs = await list_conversations(session, current_user.id)
     return [
-        {
-            "id": c.id,
-            "title": c.title or "New conversation",
-            "created_at": c.created_at.isoformat() if c.created_at else None,
-            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
-        }
+        ConversationSummaryOut(
+            id=c.id,
+            title=c.title or "New conversation",
+            created_at=c.created_at.isoformat() if c.created_at else None,
+            updated_at=c.updated_at.isoformat() if c.updated_at else None,
+        )
         for c in convs
     ]
 
 
-@router.get("/conversations/{conv_id}")
+@router.get("/conversations/{conv_id}", response_model=ConversationDetailOut)
 async def get_conv(
     conv_id: str,
     current_user: User = Depends(get_current_user),
@@ -141,14 +144,19 @@ async def get_conv(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     messages = await get_messages(session, conv_id)
-    return {
-        "id": conv.id,
-        "title": conv.title or "New conversation",
-        "messages": [
-            {"id": m.id, "role": m.role, "content": json.loads(m.content), "created_at": m.created_at.isoformat() if m.created_at else None}
+    return ConversationDetailOut(
+        id=conv.id,
+        title=conv.title or "New conversation",
+        messages=[
+            MessageOut(
+                id=m.id,
+                role=m.role,
+                content=json.loads(m.content),
+                created_at=m.created_at.isoformat() if m.created_at else None,
+            )
             for m in messages
         ],
-    }
+    )
 
 
 @router.delete("/conversations/{conv_id}", status_code=status.HTTP_204_NO_CONTENT)
