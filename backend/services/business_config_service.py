@@ -1,4 +1,3 @@
-import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from db.analytics import BusinessConfig
@@ -35,8 +34,7 @@ async def update_config(session: AsyncSession, data: dict, new_db_url: str | Non
 
     for key, value in data.items():
         if hasattr(config, key) and key not in ("id", "db_url_encrypted"):
-            # JSON-ish fields are stored as JSON text columns
-            setattr(config, key, json.dumps(value) if isinstance(value, (dict, list)) else value)
+            setattr(config, key, value)  # JSON columns handle list/dict serialization
 
     await session.commit()
     await session.refresh(config)

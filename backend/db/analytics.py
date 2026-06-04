@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import Column, Integer, Text, Boolean, DateTime, CheckConstraint, func
+from sqlalchemy import Column, Integer, Text, Boolean, DateTime, JSON, CheckConstraint, func
 from config import get_settings
 import pathlib
 
@@ -61,10 +61,10 @@ class BusinessConfig(Base):
     business_description = Column(Text, nullable=False)
     db_url_encrypted = Column(Text, nullable=False)
     domain_context = Column(Text, nullable=False)
-    business_rules = Column(Text, nullable=False)
-    table_descriptions = Column(Text, nullable=False)
-    kpi_definitions = Column(Text, nullable=False)
-    starter_questions = Column(Text, nullable=False)
+    business_rules = Column(JSON, nullable=False)        # list[{rule: str}]
+    table_descriptions = Column(JSON, nullable=False)    # {table: description}
+    kpi_definitions = Column(JSON, nullable=False)       # list[{name, sql, format, icon}]
+    starter_questions = Column(JSON, nullable=False)     # list[str]
     explain_cost_threshold = Column(Integer, default=50000, nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

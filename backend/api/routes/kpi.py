@@ -1,4 +1,3 @@
-import json
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.analytics import get_session
@@ -17,7 +16,7 @@ async def kpi_snapshot(
     pool=Depends(get_business_pool),
 ):
     config = await get_config_or_raise(session)
-    kpi_defs = json.loads(config.kpi_definitions) if isinstance(config.kpi_definitions, str) else config.kpi_definitions
+    kpi_defs = config.kpi_definitions  # JSON column → already a list
     results = []
     async with pool.acquire() as conn:
         for kpi in kpi_defs:

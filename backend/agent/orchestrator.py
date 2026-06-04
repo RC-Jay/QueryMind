@@ -47,11 +47,7 @@ class AgentOrchestrator:
         from services.confirmation import InMemoryConfirmationBroker
         broker = broker or InMemoryConfirmationBroker()
         registry = ToolRegistry()
-        kpi_defs = (
-            json.loads(config.kpi_definitions)
-            if isinstance(config.kpi_definitions, str)
-            else config.kpi_definitions
-        )
+        kpi_defs = config.kpi_definitions  # JSON column → already a list
         registry.register(GetSchemaTool(pool))
         registry.register(ExecuteQueryTool(pool, broker, cost_threshold=config.explain_cost_threshold))
         registry.register(GenerateChartTool())

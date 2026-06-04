@@ -1,10 +1,9 @@
-import json
 from db.analytics import BusinessConfig
 
 
 def build_system_prompt(config: BusinessConfig) -> str:
-    rules = json.loads(config.business_rules) if isinstance(config.business_rules, str) else config.business_rules
-    tables = json.loads(config.table_descriptions) if isinstance(config.table_descriptions, str) else config.table_descriptions
+    rules = config.business_rules          # JSON columns → already parsed
+    tables = config.table_descriptions
 
     rules_text = "\n".join(f"- {r['rule']}" for r in rules) if rules else "None specified."
     tables_text = "\n".join(f"- {t}: {d}" for t, d in tables.items()) if tables else "None specified."

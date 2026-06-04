@@ -1,4 +1,3 @@
-import json
 from agent.orchestrator import AgentOrchestrator
 from agent.llm.base import LLMResponse, ToolCall
 from db.analytics import BusinessConfig
@@ -6,18 +5,17 @@ from tests.conftest import FakeConn, FakePool, FakeLLMProvider
 
 
 def _config() -> BusinessConfig:
+    # JSON columns → store raw Python structures, not json.dumps strings.
     return BusinessConfig(
         id=1,
         business_name="Test Co",
         business_description="A test business.",
         db_url_encrypted="x",
         domain_context="Some domain context.",
-        business_rules=json.dumps([{"rule": "Amounts in paise."}]),
-        table_descriptions=json.dumps({"order_order": "orders"}),
-        kpi_definitions=json.dumps([
-            {"name": "GMV", "sql": "SELECT 1", "format": "currency", "icon": "rupee"},
-        ]),
-        starter_questions=json.dumps(["How are we doing?"]),
+        business_rules=[{"rule": "Amounts in paise."}],
+        table_descriptions={"order_order": "orders"},
+        kpi_definitions=[{"name": "GMV", "sql": "SELECT 1", "format": "currency", "icon": "rupee"}],
+        starter_questions=["How are we doing?"],
         explain_cost_threshold=50000,
     )
 
