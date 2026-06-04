@@ -19,6 +19,16 @@ const CLAUDE_MODELS = [
   "claude-3-5-haiku-latest",
 ];
 
+const PROVIDER_LABEL: Record<Provider, string> = {
+  azure: "Azure OpenAI",
+  claude: "Claude (Anthropic)",
+};
+
+interface ActiveModel {
+  provider: Provider;
+  model: string;
+}
+
 export default function LLMSettings() {
   const [provider, setProvider] = useState<Provider>("azure");
   const [model, setModel] = useState("");
@@ -26,6 +36,7 @@ export default function LLMSettings() {
   const [apiVersion, setApiVersion] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [maskedKey, setMaskedKey] = useState("");
+  const [active, setActive] = useState<ActiveModel | null>(null); // saved state, not form
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
@@ -38,6 +49,7 @@ export default function LLMSettings() {
         setEndpoint(data.endpoint || "");
         setApiVersion(data.api_version || "");
         setMaskedKey(data.api_key_masked);
+        setActive({ provider: data.provider, model: data.model });
       })
       .catch(() => {}) // 503 when unconfigured — leave defaults
       .finally(() => setLoaded(true));
@@ -56,6 +68,7 @@ export default function LLMSettings() {
       const { data } = await api.put("/api/admin/llm-config", payload);
       setMaskedKey(data.api_key_masked);
       setApiKey("");
+      setActive({ provider: data.provider, model: data.model });
       setMsg({ text: "Saved. New chats will use this model.", ok: true });
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -70,9 +83,32 @@ export default function LLMSettings() {
   return (
     <div className="p-6 max-w-2xl">
       <h1 className="text-xl font-bold text-slate-800 mb-1">AI Model</h1>
-      <p className="text-sm text-slate-500 mb-6">
+      <p className="text-sm text-slate-500 mb-4">
         Choose which language model powers the analytics agent. Changes apply to new conversations.
       </p>
+
+      {/* Currently active model — reflects the SAVED config, not the form below */}
+      <div className="mb-6 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+        {active ? (
+          <>
+            <span className="h-2 w-2 rounded-full bg-green-500" />
+            <span className="text-sm text-slate-600">Currently active:</span>
+            <span className="text-sm font-semibold text-slate-800">
+              {PROVIDER_LABEL[active.provider]} · {active.model}
+            </span>
+            {(active.provider !== provider || active.model !== model) && (
+              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                unsaved changes
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="h-2 w-2 rounded-full bg-slate-300" />
+            <span className="text-sm text-slate-500">No model configured yet — set one up below.</span>
+          </>
+        )}
+      </div>
 
       <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
         {/* Provider */}
