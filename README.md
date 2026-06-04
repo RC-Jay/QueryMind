@@ -60,14 +60,18 @@ cat .env
 
 Required variables:
 ```
+LLM_PROVIDER=azure          # optional, defaults to "azure"
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_DEPLOYMENT=
 AZURE_OPENAI_API_VERSION=
 ANALYTICS_DB_PATH=
-CONFIG_ENCRYPTION_KEY=
-JWT_SECRET_KEY=
+CONFIG_ENCRYPTION_KEY=       # Fernet key — python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+JWT_SECRET_KEY=              # openssl rand -hex 32
 ```
+
+> The **business database URL is not an env var** — it's entered via the admin
+> UI (or seed script) and stored Fernet-encrypted in the analytics DB.
 
 ### 2. Start the backend
 
@@ -123,10 +127,15 @@ python scripts/seed_changepay_config.py
 
 | Layer | Technology |
 |-------|-----------|
-| AI | Azure OpenAI GPT-4o-mini (function calling) |
-| Backend | Python 3.12, FastAPI, asyncpg, SQLAlchemy (aiosqlite) |
+| AI | Pluggable LLM provider (Strategy pattern); ships with Azure OpenAI GPT-4o-mini. Swap via `LLM_PROVIDER` |
+| Backend | Python 3.12, FastAPI (async), asyncpg, SQLAlchemy (aiosqlite) |
 | Frontend | Next.js 16, TypeScript, Tailwind CSS, Zustand |
 | Charts | Plotly.js |
 | Auth | Custom JWT (access + refresh token, httpOnly cookie) |
 | Analytics DB | SQLite (users, conversations, business config) |
 | Business DB | PostgreSQL (read-only, connection stored encrypted) |
+| Tests | pytest + pytest-asyncio (no external deps — fakes for LLM & Postgres) |
+
+Run the backend tests with `cd backend && pytest`. See [`backend/README.md`](backend/README.md)
+for architecture (LLM Strategy, dependency injection, central exception handling)
+and [`frontend/README.md`](frontend/README.md) for the UI.
