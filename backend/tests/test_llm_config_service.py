@@ -16,9 +16,10 @@ async def test_create_azure_config(analytics_session):
     )
     assert cfg.provider == "azure"
     assert crypto.decrypt(cfg.api_key_encrypted) == "sk-secret"
-    parsed = svc.get_parsed_llm_config(cfg)
-    assert "sk-secret" not in parsed["api_key_masked"]   # never leaks the key
-    assert parsed["model"] == "gpt-4o-mini"
+    from api.schemas.admin import LLMConfigOut
+    out = LLMConfigOut.from_model(cfg)
+    assert "sk-secret" not in out.api_key_masked   # never leaks the key
+    assert out.model == "gpt-4o-mini"
 
 
 async def test_create_claude_config(analytics_session):

@@ -59,6 +59,12 @@ class CreateUserResponse(BaseModel):
     name: str
 
 
+def _maybe_json(value):
+    """Accept a JSON string (Text column) or an already-parsed value (JSON column)."""
+    import json
+    return json.loads(value) if isinstance(value, str) else value
+
+
 class BusinessConfigOut(BaseModel):
     """Business config with the DB URL masked (never exposes credentials)."""
     business_name: str
@@ -70,7 +76,23 @@ class BusinessConfigOut(BaseModel):
     kpi_definitions: list[dict]
     starter_questions: list[str]
     explain_cost_threshold: int
-    updated_at: str | None = None
+    updated_at: datetime | None = None
+
+    @classmethod
+    def from_model(cls, c) -> "BusinessConfigOut":
+        from services import crypto
+        return cls(
+            business_name=c.business_name,
+            business_description=c.business_description,
+            db_url_masked=crypto.mask(c.db_url_encrypted),
+            domain_context=c.domain_context,
+            business_rules=_maybe_json(c.business_rules),
+            table_descriptions=_maybe_json(c.table_descriptions),
+            kpi_definitions=_maybe_json(c.kpi_definitions),
+            starter_questions=_maybe_json(c.starter_questions),
+            explain_cost_threshold=c.explain_cost_threshold,
+            updated_at=c.updated_at,
+        )
 
 
 class LLMConfigOut(BaseModel):
@@ -80,4 +102,16 @@ class LLMConfigOut(BaseModel):
     endpoint: str | None = None
     api_version: str | None = None
     api_key_masked: str
-    updated_at: str | None = None
+    updated_at: datetime | None = None
+
+    @classmethod
+    def from_model(cls, c) -> "LLMConfigOut":
+        from services import crypto
+        return cls(
+            provider=c.provider,
+            model=c.model,
+            endpoint=c.endpoint,
+            api_version=c.api_version,
+            api_key_masked=crypto.mask(c.api_key_encrypted),
+            updated_at=c.updated_at,
+        )

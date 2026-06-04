@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.analytics import get_session, AsyncSessionLocal, User
 import db.business_db as business_db
 from services.auth_service import decode_token
-from services.business_config_service import get_config, decrypt_url
+from services.business_config_service import get_config
+from services import crypto
 from exceptions import AuthError, ForbiddenError, ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ async def get_business_pool(session: AsyncSession = Depends(get_session)):
                 "Business database not configured. Set up the connection via Admin → Business Setup."
             )
         try:
-            url = decrypt_url(config.db_url_encrypted)
+            url = crypto.decrypt(config.db_url_encrypted)
             await business_db.init_pool(url)
             logger.info("Business DB pool initialised on first request.")
         except Exception as exc:

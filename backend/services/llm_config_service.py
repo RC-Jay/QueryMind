@@ -63,18 +63,6 @@ async def update_llm_config(
     return config
 
 
-def get_parsed_llm_config(config: LLMConfig) -> dict:
-    """Public-safe view: API key masked, never returned in full."""
-    return {
-        "provider": config.provider,
-        "model": config.model,
-        "endpoint": config.endpoint,
-        "api_version": config.api_version,
-        "api_key_masked": crypto.mask(config.api_key_encrypted),
-        "updated_at": config.updated_at.isoformat() if config.updated_at else None,
-    }
-
-
 async def ensure_llm_config_from_env(session: AsyncSession) -> None:
     """
     Migration/bootstrap: if no LLM config exists yet but Azure env vars are

@@ -6,10 +6,10 @@ from services.user_service import (
     list_users, create_user, deactivate_user, reactivate_user, reset_password,
 )
 from services.business_config_service import (
-    get_config_or_raise, update_config, get_parsed_config, reload_business_pool,
+    get_config_or_raise, update_config, reload_business_pool,
 )
 from services.llm_config_service import (
-    get_llm_config_or_raise, update_llm_config, get_parsed_llm_config,
+    get_llm_config_or_raise, update_llm_config,
 )
 from db.business_db import test_connection
 from api.schemas.admin import (
@@ -81,7 +81,7 @@ async def get_business_config(
     session: AsyncSession = Depends(get_session),
 ):
     config = await get_config_or_raise(session)
-    return BusinessConfigOut(**get_parsed_config(config))
+    return BusinessConfigOut.from_model(config)
 
 
 @router.put("/business-config", response_model=BusinessConfigOut)
@@ -95,7 +95,7 @@ async def put_business_config(
     # If the DB URL changed, rebuild the connection pool so new queries use it.
     if body.db_url:
         await reload_business_pool(session)
-    return BusinessConfigOut(**get_parsed_config(config))
+    return BusinessConfigOut.from_model(config)
 
 
 @router.post("/business-config/test-connection", response_model=DetailResponse)
@@ -117,7 +117,7 @@ async def get_llm_config(
     session: AsyncSession = Depends(get_session),
 ):
     config = await get_llm_config_or_raise(session)
-    return LLMConfigOut(**get_parsed_llm_config(config))
+    return LLMConfigOut.from_model(config)
 
 
 @router.put("/llm-config", response_model=LLMConfigOut)
@@ -134,4 +134,4 @@ async def put_llm_config(
         endpoint=body.endpoint,
         api_version=body.api_version,
     )
-    return LLMConfigOut(**get_parsed_llm_config(config))
+    return LLMConfigOut.from_model(config)
