@@ -1,12 +1,18 @@
+"""
+Pure authentication logic — password hashing and JWT token handling.
+
+This module is transport-agnostic: it has no knowledge of FastAPI or HTTP.
+FastAPI dependency wiring (get_current_user, require_superuser) lives in
+api/deps.py and builds on these primitives.
+"""
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 import bcrypt
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import get_settings
 
-_bearer = HTTPBearer()
+
+class InvalidTokenError(Exception):
+    """Raised when a JWT is malformed, expired, or of the wrong type."""
 
 
 def hash_password(plain: str) -> str:
@@ -41,6 +47,7 @@ def create_refresh_token(user_id: int) -> str:
 
 
 def decode_token(token: str, expected_type: str = "access") -> dict:
+    """Decode and validate a JWT. Raises InvalidTokenError on any problem."""
     settings = get_settings()
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=["HS256"])
@@ -48,24 +55,4 @@ def decode_token(token: str, expected_type: str = "access") -> dict:
             raise JWTError("Wrong token type")
         return payload
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-
-
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
-):
-    payload = decode_token(credentials.credentials, expected_type="access")
-    from db.analytics import AsyncSessionLocal, User
-    from sqlalchemy import select
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User).where(User.id == int(payload["sub"])))
-        user = result.scalar_one_or_none()
-    if user is None or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
-    return user
-
-
-async def require_superuser(user=Depends(get_current_user)):
-    if not user.is_superuser:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Superuser access required")
-    return user
+        raise InvalidTokenError("Invalid or expired token")

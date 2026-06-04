@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.analytics import get_session, User
-from services.auth_service import require_superuser
+from api.deps import require_superuser
 from services.user_service import (
     list_users, create_user, deactivate_user, reactivate_user, reset_password,
 )
@@ -9,11 +9,11 @@ from services.business_config_service import (
     get_config_or_raise, update_config, get_parsed_config,
 )
 from db.business_db import test_connection
-from schemas.admin import (
+from api.schemas.admin import (
     CreateUserRequest, ResetPasswordRequest, BusinessConfigRequest, TestConnectionRequest,
     AdminUserOut, CreateUserResponse, BusinessConfigOut,
 )
-from schemas.common import DetailResponse
+from api.schemas.common import DetailResponse
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

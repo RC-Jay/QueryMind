@@ -2,11 +2,10 @@ import json
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.analytics import get_session
-from services.auth_service import get_current_user
 from services.business_config_service import get_config_or_raise
-from api.deps import get_business_pool
+from api.deps import get_current_user, get_business_pool
 from tools.kpi_tool import _format_value
-from schemas.kpi import KPIItem, KPISnapshotOut
+from api.schemas.kpi import KPIItem, KPISnapshotOut
 
 router = APIRouter(prefix="/api/kpi", tags=["kpi"])
 

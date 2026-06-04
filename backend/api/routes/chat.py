@@ -4,19 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.analytics import get_session, User
-from services.auth_service import get_current_user
 from services.business_config_service import get_config_or_raise
 from services.conversation_service import (
     create_conversation, get_conversation, list_conversations,
     delete_conversation, append_message, get_messages, set_conversation_title,
 )
 from agent.orchestrator import AgentOrchestrator
-from schemas.chat import (
+from api.schemas.chat import (
     ChatRequest, ConfirmRequest, ConversationSummaryOut, MessageOut, ConversationDetailOut,
 )
-from schemas.common import DetailResponse
+from api.schemas.common import DetailResponse
 from tools.query_tool import resolve_pending
-from api.deps import get_business_pool
+from api.deps import get_current_user, get_business_pool
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 

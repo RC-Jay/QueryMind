@@ -4,13 +4,14 @@ from sqlalchemy import select
 from db.analytics import get_session, User
 from services.auth_service import (
     verify_password, create_access_token, create_refresh_token,
-    decode_token, get_current_user,
+    decode_token, InvalidTokenError,
 )
 from services.user_service import change_own_password
-from schemas.auth import (
+from api.deps import get_current_user
+from api.schemas.auth import (
     LoginRequest, ChangePasswordRequest, UserOut, LoginResponse, TokenResponse,
 )
-from schemas.common import DetailResponse
+from api.schemas.common import DetailResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -52,7 +53,10 @@ async def login(body: LoginRequest, response: Response, session: AsyncSession = 
 async def refresh(response: Response, refresh_token: str | None = Cookie(default=None), session: AsyncSession = Depends(get_session)):
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
-    payload = decode_token(refresh_token, expected_type="refresh")
+    try:
+        payload = decode_token(refresh_token, expected_type="refresh")
+    except InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     result = await session.execute(select(User).where(User.id == int(payload["sub"])))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:

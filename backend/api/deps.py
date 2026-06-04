@@ -1,14 +1,53 @@
 """
-Shared FastAPI dependencies.
+Shared FastAPI dependencies — the single import surface for all route-level
+`Depends(...)` wiring.
+
+This is the only place that bridges pure logic (services/, db/) to the HTTP
+layer: it turns domain exceptions into HTTPExceptions, resolves the current
+user from a bearer token, and hands out request-scoped resources (DB session,
+business connection pool).
 """
-from fastapi import Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from db.analytics import get_session
-import db.business_db as business_db
-from services.business_config_service import get_config, decrypt_url
 import logging
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from db.analytics import get_session, AsyncSessionLocal, User
+import db.business_db as business_db
+from services.auth_service import decode_token, InvalidTokenError
+from services.business_config_service import get_config, decrypt_url
 
 logger = logging.getLogger(__name__)
+
+# Re-export so routes have one import surface for all dependencies.
+__all__ = ["get_session", "get_current_user", "require_superuser", "get_business_pool"]
+
+_bearer = HTTPBearer()
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+) -> User:
+    """Resolve the authenticated user from the bearer access token."""
+    try:
+        payload = decode_token(credentials.credentials, expected_type="access")
+    except InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(User).where(User.id == int(payload["sub"])))
+        user = result.scalar_one_or_none()
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+    return user
+
+
+async def require_superuser(user: User = Depends(get_current_user)) -> User:
+    """Guard for superuser-only routes."""
+    if not user.is_superuser:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Superuser access required")
+    return user
 
 
 async def get_business_pool(session: AsyncSession = Depends(get_session)):
