@@ -82,10 +82,15 @@ class LLMConfig(Base):
 
 
 def _make_engine():
+    return create_async_engine(get_analytics_db_url(), echo=False)
+
+
+def get_analytics_db_url() -> str:
+    """Single source of truth for the analytics DB URL (app engine + Alembic)."""
     settings = get_settings()
     db_path = pathlib.Path(settings.analytics_db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    return create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
+    return f"sqlite+aiosqlite:///{db_path}"
 
 
 engine = _make_engine()
