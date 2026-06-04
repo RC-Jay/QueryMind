@@ -4,20 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.analytics import get_session, User
-from services.business_config_service import get_config_or_raise
 from services.conversation_service import (
-    create_conversation, get_conversation, list_conversations,
-    delete_conversation, append_message, get_messages, set_conversation_title,
+    get_conversation, list_conversations, delete_conversation, get_messages,
 )
-from agent.orchestrator import AgentOrchestrator
-from agent.llm.factory import create_llm_provider
-from services.llm_config_service import get_llm_config_or_raise
+from services.chat_service import run_turn
+from services.confirmation import get_confirmation_broker
 from api.schemas.chat import (
     ChatRequest, ConfirmRequest, ConversationSummaryOut, MessageOut, ConversationDetailOut,
 )
 from api.schemas.common import DetailResponse
-from services.confirmation import get_confirmation_broker
-from services.audit_service import record_queries
 from api.deps import get_current_user, get_business_pool
 from config import get_settings
 
@@ -47,85 +42,6 @@ async def _sse_stream(generator):
         yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
 
 
-async def _run_agent(request: ChatRequest, current_user: User, session: AsyncSession, pool):
-    config = await get_config_or_raise(session)
-
-    # Resolve or create conversation
-    if request.conversation_id:
-        conv = await get_conversation(session, request.conversation_id, current_user.id)
-        if not conv:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-    else:
-        conv = await create_conversation(session, current_user.id)
-
-    # Build message history for the agent (last 20 turns to keep context manageable)
-    raw_messages = await get_messages(session, conv.id)
-    history = []
-    for m in raw_messages[-20:]:
-        content_data = json.loads(m.content)
-        history.append({"role": m.role, "content": content_data.get("text", "")})
-
-    # Persist user message
-    await append_message(session, conv.id, "user", {"text": request.message})
-    await set_conversation_title(session, conv.id, request.message[:80])
-
-    llm_config = await get_llm_config_or_raise(session)
-    llm = create_llm_provider(llm_config)
-    orchestrator = AgentOrchestrator.build(config, llm, pool, broker=get_confirmation_broker())
-
-    event_queue: asyncio.Queue = asyncio.Queue()
-    collected_text = []
-
-    async def send_event(event: dict):
-        await event_queue.put(event)
-        if event.get("event") == "text_delta":
-            collected_text.append(event["data"].get("delta", ""))
-
-    run_timeout = get_settings().agent_run_timeout_seconds
-
-    async def run_and_signal():
-        try:
-            await asyncio.wait_for(
-                orchestrator.run(history, request.message, send_event),
-                timeout=run_timeout,
-            )
-        except (asyncio.TimeoutError, TimeoutError):
-            await event_queue.put({"event": "error", "data": {"message": "The request took too long and was stopped."}})
-        except Exception as exc:
-            await event_queue.put({"event": "error", "data": {"message": str(exc)}})
-        finally:
-            await event_queue.put(None)  # sentinel
-
-    # Start agent in background, stream events to client
-    task = asyncio.create_task(run_and_signal())
-
-    async def generate():
-        # Always send conversation_id first so frontend knows which conversation this is
-        yield {"event": "conversation_id", "data": {"id": conv.id}}
-
-        while True:
-            event = await event_queue.get()
-            if event is None:
-                break
-            yield event
-
-        # Persist assistant response after streaming completes
-        full_text = "".join(collected_text)
-        if full_text:
-            await append_message(session, conv.id, "assistant", {"text": full_text})
-
-        # Audit every SQL the agent ran this turn (best-effort; never raises)
-        await record_queries(
-            session,
-            user_id=current_user.id,
-            conversation_id=conv.id,
-            question=request.message,
-            entries=orchestrator.audit_entries,
-        )
-
-    return generate()
-
-
 @router.post("/")
 async def chat(
     request: ChatRequest,
@@ -143,7 +59,12 @@ async def chat(
             detail="The assistant is at capacity right now. Please try again in a moment.",
         )
     try:
-        generator = await _run_agent(request, current_user, session, pool)
+        generator = await run_turn(
+            session, pool,
+            user_id=current_user.id,
+            message=request.message,
+            conversation_id=request.conversation_id,
+        )
     except Exception:
         _chat_slots.release()  # never leak the slot if setup fails
         raise

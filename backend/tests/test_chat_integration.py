@@ -9,8 +9,7 @@ from sqlalchemy import select, func
 from main import app
 from db.analytics import User, Message, AuditLog, get_session
 from api.deps import get_current_user, get_business_pool
-from api.routes.chat import _run_agent
-from api.schemas.chat import ChatRequest
+from services.chat_service import run_turn
 from agent.llm.base import LLMResponse, ToolCall
 from services import business_config_service as bcs
 from services import llm_config_service as lcs
@@ -32,9 +31,9 @@ async def _seed_config(session):
                                api_key="k", endpoint="https://x/", api_version="v")
 
 
-# ── full happy path through _run_agent ────────────────────────────────────────
+# ── full happy path through chat_service.run_turn ─────────────────────────────
 
-async def test_run_agent_streams_persists_and_audits(analytics_session, monkeypatch):
+async def test_run_turn_streams_persists_and_audits(analytics_session, monkeypatch):
     await _seed_config(analytics_session)
     user = User(email="e@x.com", name="E", password_hash="x",
                 is_active=True, is_superuser=False, force_password_change=False)
@@ -53,10 +52,11 @@ async def test_run_agent_streams_persists_and_audits(analytics_session, monkeypa
         ],
         stream_text="Here are the campuses",
     )
-    monkeypatch.setattr("api.routes.chat.create_llm_provider", lambda cfg: fake_llm)
+    monkeypatch.setattr("services.chat_service.create_llm_provider", lambda cfg: fake_llm)
 
     pool = FakePool(FakeConn(rows=[{"campus": "IIT"}], explain_cost=10.0))
-    gen = await _run_agent(ChatRequest(message="which campuses?"), user, analytics_session, pool)
+    gen = await run_turn(analytics_session, pool, user_id=user.id,
+                         message="which campuses?", conversation_id=None)
     events = [e async for e in gen]
 
     kinds = [e["event"] for e in events]
