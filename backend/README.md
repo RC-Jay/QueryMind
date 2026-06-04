@@ -11,6 +11,7 @@ backend/
 ├── main.py                     # FastAPI app factory, lifespan, central exception handler
 ├── config.py                   # Pydantic Settings (reads from .env) incl. LLM_PROVIDER
 ├── exceptions.py               # Domain error hierarchy (AppError + subclasses)
+├── observability.py            # JSON logging, request-id correlation, access-log middleware
 ├── requirements.txt
 ├── pytest.ini
 │
@@ -170,6 +171,8 @@ No changes to the orchestrator, tools, or routes.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
+| `GET`  | `/api/health` | — | Liveness — process is up |
+| `GET`  | `/api/readyz` | — | Readiness — deps reachable (503 if a required one is down) |
 | `POST` | `/api/auth/login` | — | Returns access token + sets refresh cookie |
 | `POST` | `/api/auth/refresh` | cookie | Rotates access token |
 | `POST` | `/api/auth/logout` | — | Clears refresh cookie |
@@ -218,6 +221,27 @@ The `/api/chat/` endpoint streams Server-Sent Events. Each event has `event:` an
 - **JWT auth** — 15-minute access tokens in memory, 7-day refresh tokens in httpOnly cookies.
 - **Audit log** — every SQL the agent runs is recorded in `audit_log` (user, conversation, question, SQL, `outcome` = executed/blocked/cancelled/failed, rows, duration). Blocked and cancelled attempts are logged too. Best-effort: an audit-write failure never breaks the chat. Collected by the orchestrator (`ToolResult.audit`) and flushed in the chat route via `services/audit_service.record_queries`.
 
+### Known security risks — address before/at production
+
+This tool runs **AI-generated SQL against a live production database**, so these
+are the items to harden before real exposure:
+
+1. **Read-only DB role (highest priority).** The read-only guarantee currently
+   rests entirely on `SQLSafetyValidator` (one line of defense). Connect to the
+   business DB with a **PostgreSQL role that has only `SELECT` grants** (no
+   write/DDL), ideally scoped to the analytics-relevant tables/schema. Then a
+   validator bypass or prompt-injection *physically cannot* mutate data. Mostly
+   DB config, not code.
+2. **No per-user LLM cost ceiling.** `MAX_TOOL_ROUNDS` caps one turn; nothing
+   caps spend per user/day. Add a Redis token-bucket (infra already wired) to
+   prevent runaway Azure/Anthropic bills from rapid-fire or buggy clients.
+3. **Encryption-key rotation has no path.** Rotating `CONFIG_ENCRYPTION_KEY`
+   orphans every Fernet-encrypted value (DB URL, API keys). Add a re-encrypt
+   script (decrypt-with-old → encrypt-with-new) before it's an emergency.
+4. **Prompt-injection exfiltration.** A crafted prompt could coax the agent into
+   `SELECT`-ing sensitive data the connection can see. Primary mitigation is #1
+   (scope the role's visible tables) plus the existing `_event`-table block.
+
 ---
 
 ## Known limitations (for scale)
@@ -225,7 +249,7 @@ The `/api/chat/` endpoint streams Server-Sent Events. Each event has `event:` an
 Fine for the current single-instance, few-executives deployment; address before scaling:
 
 - **One pool per worker** — total Postgres connections = `workers × pool max_size`; tune against the server's `max_connections`.
-- **Observability** — no structured logging / request-correlation IDs / metrics yet; add before diagnosing issues under load.
+- **Metrics** — structured logs + per-request timing exist (below); a metrics backend (Prometheus `/metrics` or Azure App Insights) is a deployment-time choice, not wired yet.
 
 **Product backlog (deliberately deferred):**
 - *Conversation context is text-only* — prior turns replay only their text, not the
@@ -245,6 +269,10 @@ Fine for the current single-instance, few-executives deployment; address before 
   (`ANALYTICS_DB_URL`), schema managed by Alembic. SQLite remains a dev fallback.
 - *CPU-bound work on the event loop* — `bcrypt`, Plotly `to_json`, and large-table
   stringification are offloaded with `asyncio.to_thread`.
+- *Observability (partial)* — JSON structured logs with a `request_id` propagated
+  via contextvars (`observability.py`); a middleware emits a timed access log per
+  request and sets `X-Request-ID`. Readiness probe at `GET /api/readyz` checks the
+  analytics DB (required), business DB, and Redis. (Metrics backend still TBD.)
 - *Backpressure* — a per-worker semaphore (`MAX_CONCURRENT_CHATS`) caps concurrent
   agent runs; excess waits `CHAT_ACQUIRE_TIMEOUT_SECONDS` then gets a 429. A hard
   `AGENT_RUN_TIMEOUT_SECONDS` ceiling stops a wedged turn from holding a slot.
