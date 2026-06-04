@@ -47,6 +47,7 @@ class AuditLog(Base):
     conversation_id = Column(Text, nullable=True)
     question = Column(Text, nullable=True)
     sql_executed = Column(Text, nullable=True)
+    outcome = Column(Text, nullable=True)  # executed | blocked | cancelled | failed
     rows_returned = Column(Integer, nullable=True)
     duration_ms = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

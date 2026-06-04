@@ -206,9 +206,7 @@ The `/api/chat/` endpoint streams Server-Sent Events. Each event has `event:` an
 - **Statement timeout** — every query runs with a 10s server-side `statement_timeout`.
 - **DB URL encrypted at rest** — Fernet symmetric encryption. Key lives in `CONFIG_ENCRYPTION_KEY` env var, never in the database. Masked (last 10 chars) whenever returned to the UI.
 - **JWT auth** — 15-minute access tokens in memory, 7-day refresh tokens in httpOnly cookies.
-
-> **Not yet wired:** the `audit_log` table exists in the schema but query logging
-> to it is not implemented yet — a planned enhancement.
+- **Audit log** — every SQL the agent runs is recorded in `audit_log` (user, conversation, question, SQL, `outcome` = executed/blocked/cancelled/failed, rows, duration). Blocked and cancelled attempts are logged too. Best-effort: an audit-write failure never breaks the chat. Collected by the orchestrator (`ToolResult.audit`) and flushed in the chat route via `services/audit_service.record_queries`.
 
 ---
 

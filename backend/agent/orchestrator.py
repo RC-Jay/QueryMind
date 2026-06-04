@@ -39,6 +39,7 @@ class AgentOrchestrator:
         self._config = config
         self._llm = llm
         self._registry = registry
+        self.audit_entries: list = []  # AuditEntry per SQL execution this run
 
     @classmethod
     def build(cls, config: BusinessConfig, llm: LLMProvider, pool, broker=None) -> "AgentOrchestrator":
@@ -79,6 +80,8 @@ class AgentOrchestrator:
                 messages.append(_assistant_tool_calls_message(response.tool_calls))
                 for tool_call in response.tool_calls:
                     result = await self._registry.dispatch(tool_call, send_event)
+                    if result.audit is not None:
+                        self.audit_entries.append(result.audit)
                     if result.sse_event:
                         await send_event(result.sse_event)
                     if result.cancelled:

@@ -1,7 +1,8 @@
 import re
+import time
 from uuid import uuid4
 from typing import Callable, Awaitable
-from tools.base import BaseTool, ToolResult
+from tools.base import BaseTool, ToolResult, AuditEntry
 from db.safety import validate_sql
 from services.confirmation import ConfirmationBroker
 
@@ -37,10 +38,13 @@ class ExecuteQueryTool(BaseTool):
         sql: str,
         description: str = "",
     ) -> ToolResult:
-        # 1. Safety validation
+        # 1. Safety validation — record blocked attempts (governance-relevant)
         validation = validate_sql(sql)
         if not validation.ok:
-            return ToolResult(type="text", cancelled=True, reason=f"Query blocked: {validation.reason}")
+            return ToolResult(
+                type="text", cancelled=True, reason=f"Query blocked: {validation.reason}",
+                audit=AuditEntry(sql=sql, outcome="blocked"),
+            )
 
         # 2. EXPLAIN to estimate cost (short-lived connection, released immediately)
         cost = await self._estimate_cost(sql)
@@ -50,19 +54,34 @@ class ExecuteQueryTool(BaseTool):
         #    the pool under concurrency.
         if cost > self.cost_threshold:
             approved = await self._await_confirmation(send_event, cost)
-            if approved is None:
-                return ToolResult(type="text", cancelled=True, reason="Query cancelled — no response within 30 seconds.")
             if not approved:
-                return ToolResult(type="text", cancelled=True, reason="Query cancelled by user.")
+                reason = (
+                    "Query cancelled — no response within 30 seconds."
+                    if approved is None else "Query cancelled by user."
+                )
+                return ToolResult(
+                    type="text", cancelled=True, reason=reason,
+                    audit=AuditEntry(sql=sql, outcome="cancelled"),
+                )
 
         # 4. Execute on a fresh connection with a server-side statement timeout
+        start = time.monotonic()
         try:
             rows = await self._run_query(sql)
         except Exception as exc:
-            return ToolResult(type="text", cancelled=True, reason=f"Query failed: {exc}")
+            return ToolResult(
+                type="text", cancelled=True, reason=f"Query failed: {exc}",
+                audit=AuditEntry(sql=sql, outcome="failed"),
+            )
+        duration_ms = int((time.monotonic() - start) * 1000)
+
+        audit = AuditEntry(sql=sql, outcome="executed", rows_returned=len(rows), duration_ms=duration_ms)
 
         if not rows:
-            return ToolResult(type="table", data={"columns": [], "rows": [], "total": 0}, source=description)
+            return ToolResult(
+                type="table", data={"columns": [], "rows": [], "total": 0},
+                source=description, audit=audit,
+            )
 
         columns = list(rows[0].keys())
         data_rows = [[str(v) if v is not None else None for v in row.values()] for row in rows[:1000]]
@@ -71,6 +90,7 @@ class ExecuteQueryTool(BaseTool):
             type="table",
             data={"columns": columns, "rows": data_rows, "total": len(rows)},
             source=description,
+            audit=audit,
         )
         result.sse_event = {
             "event": "table",

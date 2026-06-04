@@ -17,6 +17,7 @@ from api.schemas.chat import (
 )
 from api.schemas.common import DetailResponse
 from services.confirmation import get_confirmation_broker
+from services.audit_service import record_queries
 from api.deps import get_current_user, get_business_pool
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -86,6 +87,15 @@ async def _run_agent(request: ChatRequest, current_user: User, session: AsyncSes
         full_text = "".join(collected_text)
         if full_text:
             await append_message(session, conv.id, "assistant", {"text": full_text})
+
+        # Audit every SQL the agent ran this turn (best-effort; never raises)
+        await record_queries(
+            session,
+            user_id=current_user.id,
+            conversation_id=conv.id,
+            question=request.message,
+            entries=orchestrator.audit_entries,
+        )
 
     return generate()
 

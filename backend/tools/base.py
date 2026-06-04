@@ -1,6 +1,15 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Awaitable
+
+
+@dataclass
+class AuditEntry:
+    """A record of one SQL execution attempt, for the audit log."""
+    sql: str
+    outcome: str               # "executed" | "blocked" | "cancelled" | "failed"
+    rows_returned: int | None = None
+    duration_ms: int | None = None
 
 
 @dataclass
@@ -11,6 +20,7 @@ class ToolResult:
     cancelled: bool = False
     reason: str = ""
     sse_event: dict | None = None    # populated by tool after constructing result
+    audit: AuditEntry | None = None  # set by tools that run user SQL
 
 
 class BaseTool(ABC):

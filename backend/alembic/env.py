@@ -24,12 +24,21 @@ def _url() -> str:
     return get_analytics_db_url()
 
 
+def include_name(name, type_, parent_names):
+    """Ignore tables that aren't part of our models (e.g. PostGIS spatial_ref_sys),
+    so autogenerate never proposes dropping them."""
+    if type_ == "table":
+        return name in target_metadata.tables
+    return True
+
+
 def do_run_migrations(connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         render_as_batch=True,  # enables SQLite-safe ALTERs; harmless on Postgres
         compare_type=True,
+        include_name=include_name,
     )
     with context.begin_transaction():
         context.run_migrations()
