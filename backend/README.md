@@ -225,6 +225,14 @@ The `/api/chat/` endpoint streams Server-Sent Events. Each event has `event:` an
 Fine for the current single-instance, few-executives deployment; address before scaling:
 
 - **One pool per worker** — total Postgres connections = `workers × pool max_size`; tune against the server's `max_connections`.
+- **Observability** — no structured logging / request-correlation IDs / metrics yet; add before diagnosing issues under load.
+
+**Product backlog (deliberately deferred):**
+- *Conversation context is text-only* — prior turns replay only their text, not the
+  charts/tables. A follow-up like "make that a line chart" re-queries rather than
+  reusing prior data. Doing it well means replaying a compact per-turn summary
+  (not full tables, which would bloat context/token cost); pairs naturally with
+  response caching. Tracked for the Phase 2 product work.
 - **SSE streams are worker-pinned** — a streaming response lives on the worker that accepted it. Fine behind a load balancer (the connection stays open to that worker), but it means a worker restart drops in-flight streams.
 - **Edge connection cap** — the app limits concurrent *agent runs* (below), but the proxy/server should also cap raw connections per worker (`uvicorn --limit-concurrency`, or nginx `limit_conn`) so connection setup itself can't pile up.
 
