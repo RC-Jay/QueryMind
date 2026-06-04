@@ -15,16 +15,6 @@ from api.schemas.common import DetailResponse
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-def _user_out(user: User) -> UserOut:
-    return UserOut(
-        id=user.id,
-        name=user.name,
-        email=user.email,
-        is_superuser=user.is_superuser,
-        force_password_change=user.force_password_change,
-    )
-
-
 @router.post("/login", response_model=LoginResponse)
 async def login(body: LoginRequest, response: Response, session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(User).where(User.email == body.email))
@@ -45,7 +35,7 @@ async def login(body: LoginRequest, response: Response, session: AsyncSession = 
         max_age=60 * 60 * 24 * 7,
         path="/api/auth",
     )
-    return LoginResponse(access_token=access_token, user=_user_out(user))
+    return LoginResponse(access_token=access_token, user=UserOut.model_validate(user))
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -73,7 +63,7 @@ async def logout(response: Response):
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)):
-    return _user_out(current_user)
+    return UserOut.model_validate(current_user)
 
 
 @router.post("/change-password", response_model=DetailResponse)

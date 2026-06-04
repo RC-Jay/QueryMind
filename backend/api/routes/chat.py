@@ -180,15 +180,7 @@ async def list_convs(
     session: AsyncSession = Depends(get_session),
 ):
     convs = await list_conversations(session, current_user.id)
-    return [
-        ConversationSummaryOut(
-            id=c.id,
-            title=c.title or "New conversation",
-            created_at=c.created_at.isoformat() if c.created_at else None,
-            updated_at=c.updated_at.isoformat() if c.updated_at else None,
-        )
-        for c in convs
-    ]
+    return [ConversationSummaryOut.model_validate(c) for c in convs]
 
 
 @router.get("/conversations/{conv_id}", response_model=ConversationDetailOut)
@@ -203,16 +195,8 @@ async def get_conv(
     messages = await get_messages(session, conv_id)
     return ConversationDetailOut(
         id=conv.id,
-        title=conv.title or "New conversation",
-        messages=[
-            MessageOut(
-                id=m.id,
-                role=m.role,
-                content=json.loads(m.content),
-                created_at=m.created_at.isoformat() if m.created_at else None,
-            )
-            for m in messages
-        ],
+        title=conv.title,
+        messages=[MessageOut.model_validate(m) for m in messages],
     )
 
 

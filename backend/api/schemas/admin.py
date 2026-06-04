@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict
 from typing import Any
 
 
@@ -41,14 +42,15 @@ class LLMConfigRequest(BaseModel):
 # ── Responses ─────────────────────────────────────────────────────────────────
 
 class AdminUserOut(BaseModel):
-    """Full user row shown to a superuser in the user management table."""
+    """Full user row shown to a superuser. Build with .model_validate(user)."""
+    model_config = ConfigDict(from_attributes=True)
     id: int
     email: str
     name: str
     is_active: bool
     is_superuser: bool
     force_password_change: bool
-    created_at: str | None = None
+    created_at: datetime | None = None  # serialized to ISO 8601
 
 
 class CreateUserResponse(BaseModel):

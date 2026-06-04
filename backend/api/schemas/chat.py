@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+import json
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Any
 
 
@@ -21,23 +23,41 @@ class SSEEvent(BaseModel):
     data: Any
 
 
-# ── Responses ─────────────────────────────────────────────────────────────────
+# ── Responses (built via .model_validate(orm_obj)) ────────────────────────────
 
 class ConversationSummaryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     title: str
-    created_at: str | None = None
-    updated_at: str | None = None
+    created_at: datetime | None = None  # Pydantic serializes to ISO 8601
+    updated_at: datetime | None = None
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _default_title(cls, v):
+        return v or "New conversation"
 
 
 class MessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     role: str
     content: dict
-    created_at: str | None = None
+    created_at: datetime | None = None
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _parse_content(cls, v):
+        # messages.content is stored as a JSON string; accept either.
+        return json.loads(v) if isinstance(v, str) else v
 
 
 class ConversationDetailOut(BaseModel):
     id: str
     title: str
     messages: list[MessageOut]
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _default_title(cls, v):
+        return v or "New conversation"

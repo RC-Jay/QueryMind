@@ -29,18 +29,7 @@ async def get_users(
     session: AsyncSession = Depends(get_session),
 ):
     users = await list_users(session)
-    return [
-        AdminUserOut(
-            id=u.id,
-            email=u.email,
-            name=u.name,
-            is_active=u.is_active,
-            is_superuser=u.is_superuser,
-            force_password_change=u.force_password_change,
-            created_at=u.created_at.isoformat() if u.created_at else None,
-        )
-        for u in users
-    ]
+    return [AdminUserOut.model_validate(u) for u in users]
 
 
 @router.post("/users", status_code=status.HTTP_201_CREATED, response_model=CreateUserResponse)
