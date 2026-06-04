@@ -53,12 +53,15 @@ async def update_config(session: AsyncSession, data: dict, new_db_url: str | Non
 
     await session.commit()
     await session.refresh(config)
-
-    # Re-initialise the business DB pool with the (possibly new) URL
-    url = decrypt_url(config.db_url_encrypted)
-    await init_pool(url)
-
     return config
+
+
+async def reload_business_pool(session: AsyncSession) -> None:
+    """(Re)build the asyncpg pool from the stored config. Call after the DB URL
+    changes. Kept separate from update_config so config persistence has no
+    connection-management side effects."""
+    config = await get_config_or_raise(session)
+    await init_pool(decrypt_url(config.db_url_encrypted))
 
 
 async def ensure_pool_from_config(session: AsyncSession) -> None:
@@ -66,8 +69,7 @@ async def ensure_pool_from_config(session: AsyncSession) -> None:
     config = await get_config(session)
     if config is not None:
         try:
-            url = decrypt_url(config.db_url_encrypted)
-            await init_pool(url)
+            await init_pool(decrypt_url(config.db_url_encrypted))
         except Exception:
             pass  # Pool init failure at startup is non-fatal — admin can fix via UI
 

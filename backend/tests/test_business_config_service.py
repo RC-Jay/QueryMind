@@ -23,12 +23,8 @@ async def test_get_config_or_raise_when_unconfigured(analytics_session):
         await bcs.get_config_or_raise(analytics_session)
 
 
-async def test_update_config_creates_and_parses(analytics_session, monkeypatch):
-    # Patch init_pool so saving config does NOT open a real Postgres connection.
-    async def _noop(url):
-        return None
-    monkeypatch.setattr(bcs, "init_pool", _noop)
-
+async def test_update_config_creates_and_parses(analytics_session):
+    # update_config is now pure persistence — no pool side effect, no patching needed.
     config = await bcs.update_config(
         analytics_session,
         data={

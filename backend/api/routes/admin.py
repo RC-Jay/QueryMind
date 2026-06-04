@@ -6,7 +6,7 @@ from services.user_service import (
     list_users, create_user, deactivate_user, reactivate_user, reset_password,
 )
 from services.business_config_service import (
-    get_config_or_raise, update_config, get_parsed_config,
+    get_config_or_raise, update_config, get_parsed_config, reload_business_pool,
 )
 from services.llm_config_service import (
     get_llm_config_or_raise, update_llm_config, get_parsed_llm_config,
@@ -103,6 +103,9 @@ async def put_business_config(
 ):
     data = body.model_dump(exclude={"db_url"})
     config = await update_config(session, data, new_db_url=body.db_url)
+    # If the DB URL changed, rebuild the connection pool so new queries use it.
+    if body.db_url:
+        await reload_business_pool(session)
     return BusinessConfigOut(**get_parsed_config(config))
 
 
