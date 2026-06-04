@@ -1,6 +1,5 @@
 import json
 from tools.base import BaseTool, ToolResult
-from db.business_db import get_pool
 from typing import Callable, Awaitable
 
 
@@ -22,10 +21,12 @@ class GetSchemaTool(BaseTool):
         "required": ["table_names"],
     }
 
+    def __init__(self, pool):
+        self._pool = pool
+
     async def execute(self, send_event: Callable[[dict], Awaitable[None]], table_names: list[str]) -> ToolResult:
-        pool = await get_pool()
         schema_info = {}
-        async with pool.acquire() as conn:
+        async with self._pool.acquire() as conn:
             for table in table_names:
                 rows = await conn.fetch(
                     """

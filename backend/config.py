@@ -9,6 +9,9 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    # LLM provider selection (azure | gemini | ...)
+    llm_provider: str = "azure"
+
     # Azure OpenAI
     azure_openai_endpoint: str
     azure_openai_api_key: str

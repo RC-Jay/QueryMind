@@ -61,6 +61,33 @@ uvicorn main:app --port 8000 --reload
 
 Health check: `curl http://localhost:8000/api/health`
 
+## Tests
+
+```bash
+source .venv/bin/activate
+pytest
+```
+
+Tests use **no external dependencies** — PostgreSQL is replaced by an in-memory
+fake pool, the LLM by a fake provider (scripted responses), and the analytics
+DB by in-memory SQLite. This is possible because every collaborator is injected:
+
+- **LLM** — `AgentOrchestrator` depends on the `LLMProvider` protocol
+  (`agent/llm/base.py`), not a vendor SDK. Tests pass a `FakeLLMProvider`.
+- **DB pool** — tools receive the asyncpg pool via their constructor, so tests
+  pass a `FakePool`. The orchestrator is wired via `AgentOrchestrator.build(config, llm, pool)`.
+
+## Swapping the LLM provider
+
+The LLM backend is a Strategy. To add Gemini (or any model):
+
+1. Create `agent/llm/gemini_provider.py` implementing the `LLMProvider` protocol
+   (`complete()` + `stream()`, returning the normalized `LLMResponse`/`ToolCall` types)
+2. Add an `elif provider == "gemini"` branch in `agent/llm/factory.py`
+3. Set `LLM_PROVIDER=gemini` in `.env`
+
+No changes to the orchestrator, tools, or routes.
+
 ---
 
 ## Key Endpoints

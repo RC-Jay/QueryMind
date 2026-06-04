@@ -1,48 +1,59 @@
 import json
-import asyncio
-from typing import Callable, Awaitable, AsyncIterator
-from openai import AzureOpenAI
-from openai import AsyncAzureOpenAI
+from typing import Callable, Awaitable
 from tools.registry import ToolRegistry
 from tools.schema_tool import GetSchemaTool
 from tools.query_tool import ExecuteQueryTool
 from tools.chart_tool import GenerateChartTool
 from tools.kpi_tool import GetKPISnapshotTool
 from agent.prompt import build_system_prompt
+from agent.llm.base import LLMProvider, ToolCall
 from db.analytics import BusinessConfig
-from config import get_settings
 
 
 def _tool_result_message(tool_call_id: str, content: str) -> dict:
+    return {"role": "tool", "tool_call_id": tool_call_id, "content": content}
+
+
+def _assistant_tool_calls_message(tool_calls: list[ToolCall]) -> dict:
+    """Reconstruct the assistant message (OpenAI wire shape) from normalized calls."""
     return {
-        "role": "tool",
-        "tool_call_id": tool_call_id,
-        "content": content,
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": tc.arguments}}
+            for tc in tool_calls
+        ],
     }
 
 
 class AgentOrchestrator:
     """
-    Template Method pattern: run() defines the loop.
-    Strategy pattern: tools injected via ToolRegistry.
+    Template Method: run() defines the tool-use loop.
+    Strategy: the LLM backend (LLMProvider) and the tools (ToolRegistry) are
+    injected — no vendor SDK or DB client is referenced here directly.
     """
 
-    MAX_TOOL_ROUNDS = 8  # safety cap to prevent infinite loops
+    MAX_TOOL_ROUNDS = 8  # safety cap against infinite tool loops
 
-    def __init__(self, config: BusinessConfig):
+    def __init__(self, config: BusinessConfig, llm: LLMProvider, registry: ToolRegistry):
         self._config = config
-        self._settings = get_settings()
-        self._client = AsyncAzureOpenAI(
-            azure_endpoint=self._settings.azure_openai_endpoint,
-            api_key=self._settings.azure_openai_api_key,
-            api_version=self._settings.azure_openai_api_version,
+        self._llm = llm
+        self._registry = registry
+
+    @classmethod
+    def build(cls, config: BusinessConfig, llm: LLMProvider, pool) -> "AgentOrchestrator":
+        """Wire the standard toolset with an injected DB pool."""
+        registry = ToolRegistry()
+        kpi_defs = (
+            json.loads(config.kpi_definitions)
+            if isinstance(config.kpi_definitions, str)
+            else config.kpi_definitions
         )
-        self._registry = ToolRegistry()
-        kpi_defs = json.loads(config.kpi_definitions) if isinstance(config.kpi_definitions, str) else config.kpi_definitions
-        self._registry.register(GetSchemaTool())
-        self._registry.register(ExecuteQueryTool(cost_threshold=config.explain_cost_threshold))
-        self._registry.register(GenerateChartTool())
-        self._registry.register(GetKPISnapshotTool(kpi_definitions=kpi_defs))
+        registry.register(GetSchemaTool(pool))
+        registry.register(ExecuteQueryTool(pool, cost_threshold=config.explain_cost_threshold))
+        registry.register(GenerateChartTool())
+        registry.register(GetKPISnapshotTool(pool, kpi_definitions=kpi_defs))
+        return cls(config, llm, registry)
 
     async def run(
         self,
@@ -50,65 +61,36 @@ class AgentOrchestrator:
         user_message: str,
         send_event: Callable[[dict], Awaitable[None]],
     ) -> str:
-        """
-        Run the agent loop. Calls send_event for each SSE event.
-        Returns the final assistant text response.
-        """
-        system_prompt = build_system_prompt(self._config)
+        """Run the agent loop, emitting SSE events. Returns the final text."""
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": build_system_prompt(self._config)},
             *history,
             {"role": "user", "content": user_message},
         ]
-
+        tools = self._registry.get_openai_definitions()
         final_text = ""
 
         for _ in range(self.MAX_TOOL_ROUNDS):
-            response = await self._client.chat.completions.create(
-                model=self._settings.azure_openai_deployment,
-                messages=messages,
-                tools=self._registry.get_openai_definitions(),
-                tool_choice="auto",
-                stream=False,
-                temperature=0.1,
-            )
-            choice = response.choices[0]
+            response = await self._llm.complete(messages, tools)
 
-            if choice.finish_reason == "tool_calls":
-                messages.append(choice.message.model_dump())
-                for tool_call in choice.message.tool_calls:
+            if response.finish_reason == "tool_calls":
+                messages.append(_assistant_tool_calls_message(response.tool_calls))
+                for tool_call in response.tool_calls:
                     result = await self._registry.dispatch(tool_call, send_event)
-                    # Emit SSE event for rich output (chart/table/metrics)
                     if result.sse_event:
                         await send_event(result.sse_event)
-                    # Build tool result content for the next LLM call
                     if result.cancelled:
                         content = f"Tool call was not completed: {result.reason}"
-                    elif result.type == "table":
+                    elif result.data is not None:
                         content = json.dumps(result.data)
                     else:
-                        content = json.dumps(result.data) if result.data is not None else "Done"
+                        content = "Done"
                     messages.append(_tool_result_message(tool_call.id, content))
-
-            elif choice.finish_reason in ("stop", "length", None):
-                # Switch to streaming for the final text response
-                messages.append({"role": "user", "content": ""})  # placeholder removed below
-                messages.pop()
-
-                stream = await self._client.chat.completions.create(
-                    model=self._settings.azure_openai_deployment,
-                    messages=messages,
-                    tools=self._registry.get_openai_definitions(),
-                    tool_choice="none",  # no more tool calls on final pass
-                    stream=True,
-                    temperature=0.1,
-                )
-                async for chunk in stream:
-                    delta = chunk.choices[0].delta.content or "" if chunk.choices else ""
-                    if delta:
-                        final_text += delta
-                        await send_event({"event": "text_delta", "data": {"delta": delta}})
-
+            else:
+                # Final answer — stream tokens
+                async for delta in self._llm.stream(messages, tools):
+                    final_text += delta
+                    await send_event({"event": "text_delta", "data": {"delta": delta}})
                 await send_event({"event": "done", "data": {}})
                 break
 

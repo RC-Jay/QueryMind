@@ -1,6 +1,5 @@
 import json
 from tools.base import BaseTool, ToolResult
-from db.business_db import get_pool
 from typing import Callable, Awaitable
 
 
@@ -31,13 +30,13 @@ class GetKPISnapshotTool(BaseTool):
     )
     parameters_schema = {"type": "object", "properties": {}, "required": []}
 
-    def __init__(self, kpi_definitions: list[dict]):
+    def __init__(self, pool, kpi_definitions: list[dict]):
+        self._pool = pool
         self._kpi_definitions = kpi_definitions
 
     async def execute(self, send_event: Callable[[dict], Awaitable[None]]) -> ToolResult:
-        pool = await get_pool()
         results = []
-        async with pool.acquire() as conn:
+        async with self._pool.acquire() as conn:
             for kpi in self._kpi_definitions:
                 try:
                     value = await conn.fetchval(kpi["sql"])

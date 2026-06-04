@@ -5,7 +5,6 @@ import json
 from uuid import uuid4
 from typing import Callable, Awaitable
 from tools.base import BaseTool, ToolResult
-from db.business_db import get_pool
 from db.safety import validate_sql
 
 # Shared dict of pending confirmations: query_id → (event, approved_flag)
@@ -49,7 +48,8 @@ class ExecuteQueryTool(BaseTool):
         "required": ["sql", "description"],
     }
 
-    def __init__(self, cost_threshold: int = 50_000):
+    def __init__(self, pool, cost_threshold: int = 50_000):
+        self._pool = pool
         self.cost_threshold = cost_threshold
 
     async def execute(
@@ -63,8 +63,7 @@ class ExecuteQueryTool(BaseTool):
         if not validation.ok:
             return ToolResult(type="text", cancelled=True, reason=f"Query blocked: {validation.reason}")
 
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        async with self._pool.acquire() as conn:
             # 2. EXPLAIN to estimate cost
             try:
                 explain_rows = await conn.fetch(f"EXPLAIN {sql}")

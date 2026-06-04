@@ -1,5 +1,6 @@
 import json
 from tools.base import BaseTool, ToolResult
+from agent.llm.base import ToolCall
 from typing import Callable, Awaitable
 
 
@@ -15,15 +16,14 @@ class ToolRegistry:
 
     async def dispatch(
         self,
-        tool_call,
+        tool_call: ToolCall,
         send_event: Callable[[dict], Awaitable[None]],
     ) -> ToolResult:
-        name = tool_call.function.name
-        tool = self._tools.get(name)
+        tool = self._tools.get(tool_call.name)
         if tool is None:
-            return ToolResult(type="text", data=f"Unknown tool: {name}", cancelled=True)
+            return ToolResult(type="text", data=f"Unknown tool: {tool_call.name}", cancelled=True)
         try:
-            kwargs = json.loads(tool_call.function.arguments or "{}")
+            kwargs = json.loads(tool_call.arguments or "{}")
             return await tool.execute(send_event=send_event, **kwargs)
         except Exception as exc:
             return ToolResult(type="text", cancelled=True, reason=str(exc))

@@ -10,12 +10,14 @@ from services.conversation_service import (
     delete_conversation, append_message, get_messages, set_conversation_title,
 )
 from agent.orchestrator import AgentOrchestrator
+from agent.llm.factory import create_llm_provider
 from api.schemas.chat import (
     ChatRequest, ConfirmRequest, ConversationSummaryOut, MessageOut, ConversationDetailOut,
 )
 from api.schemas.common import DetailResponse
 from tools.query_tool import resolve_pending
 from api.deps import get_current_user, get_business_pool
+from config import get_settings
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -25,7 +27,7 @@ async def _sse_stream(generator):
         yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
 
 
-async def _run_agent(request: ChatRequest, current_user: User, session: AsyncSession):
+async def _run_agent(request: ChatRequest, current_user: User, session: AsyncSession, pool):
     config = await get_config_or_raise(session)
 
     # Resolve or create conversation
@@ -47,7 +49,8 @@ async def _run_agent(request: ChatRequest, current_user: User, session: AsyncSes
     await append_message(session, conv.id, "user", {"text": request.message})
     await set_conversation_title(session, conv.id, request.message[:80])
 
-    orchestrator = AgentOrchestrator(config)
+    llm = create_llm_provider(get_settings())
+    orchestrator = AgentOrchestrator.build(config, llm, pool)
 
     event_queue: asyncio.Queue = asyncio.Queue()
     collected_text = []
@@ -91,12 +94,12 @@ async def chat(
     request: ChatRequest,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-    _pool=Depends(get_business_pool),  # ensures pool is ready before streaming starts
+    pool=Depends(get_business_pool),  # ensures pool is ready before streaming starts
 ):
     if current_user.force_password_change:
         raise HTTPException(status_code=403, detail="Password change required before using chat")
 
-    generator = await _run_agent(request, current_user, session)
+    generator = await _run_agent(request, current_user, session, pool)
     return StreamingResponse(
         _sse_stream(generator),
         media_type="text/event-stream",
