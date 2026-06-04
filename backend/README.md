@@ -62,6 +62,7 @@ backend/
 │   ├── business_config_service.py  # Business/domain config CRUD (DB URL encrypted)
 │   ├── llm_config_service.py   # LLM provider + credentials CRUD (API key encrypted)
 │   ├── confirmation.py         # ConfirmationBroker (Redis BLPOP + in-process fallback)
+│   ├── audit_service.py        # Best-effort audit logging of agent-run SQL
 │   └── conversation_service.py # Conversation + message persistence
 │
 ├── scripts/
