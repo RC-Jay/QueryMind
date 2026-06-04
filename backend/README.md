@@ -217,6 +217,8 @@ Fine for the current single-instance, few-executives deployment; address before 
 
 - **One pool per worker** — total Postgres connections = `workers × pool max_size`; tune against the server's `max_connections`.
 - **SSE streams are worker-pinned** — a streaming response lives on the worker that accepted it. Fine behind a load balancer (the connection stays open to that worker), but it means a worker restart drops in-flight streams.
+- **No backpressure** — nothing caps concurrent in-flight requests / SSE streams; a flood piles up coroutines and memory. Add a concurrency limit (semaphore / proxy connection cap) before opening to many users.
+- **CPU-bound work runs on the event loop** — `fig.to_json()` (chart tool), `json.dumps` of large table results, and `bcrypt` (login, ~50–100ms) block the loop while they run. Negligible for small aggregated charts / few users; offload with `asyncio.to_thread(...)` at three call sites (chart serialize, large-table serialize, bcrypt) before scaling.
 
 **Resolved:**
 - *Cross-worker expensive-query confirmation* — the confirm signal flows through
