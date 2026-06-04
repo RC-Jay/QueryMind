@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.analytics import get_session
 from services.business_config_service import get_config_or_raise
+from services.kpi_service import compute_kpis
 from api.deps import get_current_user, get_business_pool
-from tools.kpi_tool import _format_value
 from api.schemas.kpi import KPIItem, KPISnapshotOut
 
 router = APIRouter(prefix="/api/kpi", tags=["kpi"])
@@ -16,18 +16,5 @@ async def kpi_snapshot(
     pool=Depends(get_business_pool),
 ):
     config = await get_config_or_raise(session)
-    kpi_defs = config.kpi_definitions  # JSON column → already a list
-    results = []
-    async with pool.acquire() as conn:
-        for kpi in kpi_defs:
-            try:
-                value = await conn.fetchval(kpi["sql"])
-                formatted = _format_value(value, kpi.get("format", "number"))
-            except Exception:
-                formatted = "N/A"
-            results.append(KPIItem(
-                label=kpi["name"],
-                value=formatted,
-                icon=kpi.get("icon", ""),
-            ))
-    return KPISnapshotOut(kpis=results)
+    items = await compute_kpis(pool, config.kpi_definitions)
+    return KPISnapshotOut(kpis=[KPIItem(**item) for item in items])

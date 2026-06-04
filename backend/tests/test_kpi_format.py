@@ -1,4 +1,4 @@
-from tools.kpi_tool import _format_value
+from services.kpi_service import _format_value
 
 
 def test_currency():
