@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from db.analytics import init_db, AsyncSessionLocal
 from db.business_db import close_pool
 from services.business_config_service import ensure_pool_from_config
+from services.llm_config_service import ensure_llm_config_from_env
 from api.routes import auth, admin, chat, kpi
 from config import get_settings
 from exceptions import AppError
@@ -15,6 +16,7 @@ async def lifespan(app: FastAPI):
     # Startup
     await init_db()
     async with AsyncSessionLocal() as session:
+        await ensure_llm_config_from_env(session)  # bootstrap LLM config from env if unset
         await ensure_pool_from_config(session)
     yield
     # Shutdown

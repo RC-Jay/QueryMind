@@ -30,6 +30,14 @@ class TestConnectionRequest(BaseModel):
     db_url: str
 
 
+class LLMConfigRequest(BaseModel):
+    provider: str                  # "azure" | "claude"
+    model: str                     # Azure deployment name or Claude model id
+    api_key: str | None = None     # None = keep existing key
+    endpoint: str | None = None    # Azure only
+    api_version: str | None = None # Azure only
+
+
 # ── Responses ─────────────────────────────────────────────────────────────────
 
 class AdminUserOut(BaseModel):
@@ -60,4 +68,14 @@ class BusinessConfigOut(BaseModel):
     kpi_definitions: list[dict]
     starter_questions: list[str]
     explain_cost_threshold: int
+    updated_at: str | None = None
+
+
+class LLMConfigOut(BaseModel):
+    """LLM config with the API key masked (never exposes the full key)."""
+    provider: str
+    model: str
+    endpoint: str | None = None
+    api_version: str | None = None
+    api_key_masked: str
     updated_at: str | None = None

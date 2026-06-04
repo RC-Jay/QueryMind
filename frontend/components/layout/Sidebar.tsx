@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useChatStore } from "@/store/chatStore";
-import { Plus, MessageSquare, Trash2, Settings, Users } from "lucide-react";
+import { Plus, MessageSquare, Trash2, Settings, Users, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 import api from "@/lib/api";
 
@@ -95,6 +95,16 @@ export default function Sidebar() {
           >
             <Settings size={15} />
             Business Setup
+          </Link>
+          <Link
+            href="/admin/llm"
+            className={clsx(
+              "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors",
+              pathname.startsWith("/admin/llm") ? "bg-slate-700 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+            )}
+          >
+            <Sparkles size={15} />
+            AI Model
           </Link>
         </div>
       )}

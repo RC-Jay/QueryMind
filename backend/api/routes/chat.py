@@ -11,13 +11,13 @@ from services.conversation_service import (
 )
 from agent.orchestrator import AgentOrchestrator
 from agent.llm.factory import create_llm_provider
+from services.llm_config_service import get_llm_config_or_raise
 from api.schemas.chat import (
     ChatRequest, ConfirmRequest, ConversationSummaryOut, MessageOut, ConversationDetailOut,
 )
 from api.schemas.common import DetailResponse
 from tools.query_tool import resolve_pending
 from api.deps import get_current_user, get_business_pool
-from config import get_settings
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -49,7 +49,8 @@ async def _run_agent(request: ChatRequest, current_user: User, session: AsyncSes
     await append_message(session, conv.id, "user", {"text": request.message})
     await set_conversation_title(session, conv.id, request.message[:80])
 
-    llm = create_llm_provider(get_settings())
+    llm_config = await get_llm_config_or_raise(session)
+    llm = create_llm_provider(llm_config)
     orchestrator = AgentOrchestrator.build(config, llm, pool)
 
     event_queue: asyncio.Queue = asyncio.Queue()

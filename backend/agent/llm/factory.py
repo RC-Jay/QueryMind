@@ -1,28 +1,33 @@
 """
-Factory that builds the configured LLMProvider.
+Factory that builds the configured LLMProvider from the stored LLMConfig.
 
-To add a new backend (e.g. Gemini):
-  1. Create agent/llm/gemini_provider.py implementing LLMProvider
-  2. Add an `elif provider == "gemini"` branch below
-  3. Set LLM_PROVIDER=gemini in the environment
+Provider + credentials come from the analytics DB (Admin → AI Model), not the
+environment. To add another backend (e.g. Gemini):
+  1. Create agent/llm/<name>_provider.py implementing LLMProvider
+  2. Add a branch below keyed on config.provider
 Nothing else in the app changes.
 """
 from agent.llm.base import LLMProvider
 from agent.llm.azure_provider import AzureOpenAIProvider
+from agent.llm.claude_provider import ClaudeProvider
+from services import crypto
 
 
-def create_llm_provider(settings) -> LLMProvider:
-    provider = (getattr(settings, "llm_provider", "azure") or "azure").lower()
+def create_llm_provider(config) -> LLMProvider:
+    """`config` is an LLMConfig row (provider, model, endpoint, api_version,
+    api_key_encrypted)."""
+    provider = (config.provider or "").lower()
+    api_key = crypto.decrypt(config.api_key_encrypted)
 
     if provider == "azure":
         return AzureOpenAIProvider(
-            endpoint=settings.azure_openai_endpoint,
-            api_key=settings.azure_openai_api_key,
-            api_version=settings.azure_openai_api_version,
-            deployment=settings.azure_openai_deployment,
+            endpoint=config.endpoint,
+            api_key=api_key,
+            api_version=config.api_version,
+            deployment=config.model,
         )
 
-    # elif provider == "gemini":
-    #     return GeminiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
+    if provider == "claude":
+        return ClaudeProvider(api_key=api_key, model=config.model)
 
     raise ValueError(f"Unsupported LLM provider: {provider!r}")

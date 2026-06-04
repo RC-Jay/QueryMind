@@ -8,10 +8,13 @@ from services.user_service import (
 from services.business_config_service import (
     get_config_or_raise, update_config, get_parsed_config,
 )
+from services.llm_config_service import (
+    get_llm_config_or_raise, update_llm_config, get_parsed_llm_config,
+)
 from db.business_db import test_connection
 from api.schemas.admin import (
     CreateUserRequest, ResetPasswordRequest, BusinessConfigRequest, TestConnectionRequest,
-    AdminUserOut, CreateUserResponse, BusinessConfigOut,
+    LLMConfigRequest, AdminUserOut, CreateUserResponse, BusinessConfigOut, LLMConfigOut,
 )
 from api.schemas.common import DetailResponse
 
@@ -112,3 +115,31 @@ async def test_db_connection(
     if not ok:
         raise HTTPException(status_code=400, detail=f"Connection failed: {message}")
     return DetailResponse(detail=message)
+
+
+# ── LLM config ────────────────────────────────────────────────────────────────
+
+@router.get("/llm-config", response_model=LLMConfigOut)
+async def get_llm_config(
+    _: User = Depends(require_superuser),
+    session: AsyncSession = Depends(get_session),
+):
+    config = await get_llm_config_or_raise(session)
+    return LLMConfigOut(**get_parsed_llm_config(config))
+
+
+@router.put("/llm-config", response_model=LLMConfigOut)
+async def put_llm_config(
+    body: LLMConfigRequest,
+    _: User = Depends(require_superuser),
+    session: AsyncSession = Depends(get_session),
+):
+    config = await update_llm_config(
+        session,
+        provider=body.provider,
+        model=body.model,
+        api_key=body.api_key,
+        endpoint=body.endpoint,
+        api_version=body.api_version,
+    )
+    return LLMConfigOut(**get_parsed_llm_config(config))

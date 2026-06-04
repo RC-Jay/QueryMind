@@ -35,7 +35,8 @@ backend/
 │   └── llm/                    # LLM Strategy — provider-agnostic
 │       ├── base.py             # LLMProvider protocol + normalized LLMResponse/ToolCall types
 │       ├── azure_provider.py   # Azure OpenAI implementation
-│       └── factory.py          # create_llm_provider(settings) — selects by LLM_PROVIDER
+│       ├── claude_provider.py  # Anthropic Claude impl (OpenAI↔Anthropic translation)
+│       └── factory.py          # create_llm_provider(llm_config) — selects by config.provider
 │
 ├── tools/
 │   ├── base.py                 # BaseTool ABC + ToolResult
@@ -53,7 +54,9 @@ backend/
 ├── services/                   # Pure business logic — ZERO FastAPI imports
 │   ├── auth_service.py         # bcrypt hashing + JWT create/decode (raises InvalidTokenError)
 │   ├── user_service.py         # User CRUD — raises domain exceptions
-│   ├── business_config_service.py  # Config CRUD, Fernet encrypt/decrypt for DB URL
+│   ├── crypto.py               # Fernet encrypt/decrypt/mask for secrets at rest
+│   ├── business_config_service.py  # Business/domain config CRUD (DB URL encrypted)
+│   ├── llm_config_service.py   # LLM provider + credentials CRUD (API key encrypted)
 │   └── conversation_service.py # Conversation + message persistence
 │
 ├── scripts/
@@ -110,14 +113,24 @@ DB by in-memory SQLite. This is possible because every collaborator is injected:
 - **DB pool** — tools receive the asyncpg pool via their constructor, so tests
   pass a `FakePool`. The orchestrator is wired via `AgentOrchestrator.build(config, llm, pool)`.
 
-## Swapping the LLM provider
+## Choosing / swapping the LLM provider
 
-The LLM backend is a Strategy. To add Gemini (or any model):
+The provider and its credentials are **stored in the DB** (`llm_config` table,
+API key Fernet-encrypted) and configured by a superuser at **Admin → AI Model**.
+Two providers ship today: **Azure OpenAI** and **Claude (Anthropic)**.
+
+On first startup, if `llm_config` is empty, it is seeded from the Azure env vars
+(`ensure_llm_config_from_env`) so existing deployments keep working; after that
+the DB is the source of truth.
+
+The backend is a Strategy. To add another model (e.g. Gemini):
 
 1. Create `agent/llm/gemini_provider.py` implementing the `LLMProvider` protocol
-   (`complete()` + `stream()`, returning the normalized `LLMResponse`/`ToolCall` types)
-2. Add an `elif provider == "gemini"` branch in `agent/llm/factory.py`
-3. Set `LLM_PROVIDER=gemini` in `.env`
+   (`complete()` + `stream()`, returning the normalized `LLMResponse`/`ToolCall`
+   types — translate the vendor's message/tool format here, as `claude_provider.py` does)
+2. Add a branch in `agent/llm/factory.py` keyed on `config.provider`
+3. Add it to `SUPPORTED_PROVIDERS` in `services/llm_config_service.py` and to the
+   provider dropdown in `components/admin/LLMSettings.tsx`
 
 No changes to the orchestrator, tools, or routes.
 
@@ -143,6 +156,8 @@ No changes to the orchestrator, tools, or routes.
 | `GET`  | `/api/admin/business-config` | Superuser | Get business config (DB URL masked) |
 | `PUT`  | `/api/admin/business-config` | Superuser | Update business config |
 | `POST` | `/api/admin/business-config/test-connection` | Superuser | Test DB URL before saving |
+| `GET`  | `/api/admin/llm-config` | Superuser | Get LLM provider config (API key masked) |
+| `PUT`  | `/api/admin/llm-config` | Superuser | Set provider (azure/claude), model, credentials |
 
 ---
 

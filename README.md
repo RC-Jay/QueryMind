@@ -60,18 +60,22 @@ cat .env
 
 Required variables:
 ```
-LLM_PROVIDER=azure          # optional, defaults to "azure"
+ANALYTICS_DB_PATH=
+CONFIG_ENCRYPTION_KEY=       # Fernet key — python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+JWT_SECRET_KEY=              # openssl rand -hex 32
+
+# Optional — only used to bootstrap the LLM config on first run if none exists.
+# After first run, the LLM provider/credentials live in the DB (Admin → AI Model).
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_DEPLOYMENT=
 AZURE_OPENAI_API_VERSION=
-ANALYTICS_DB_PATH=
-CONFIG_ENCRYPTION_KEY=       # Fernet key — python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-JWT_SECRET_KEY=              # openssl rand -hex 32
 ```
 
-> The **business database URL is not an env var** — it's entered via the admin
-> UI (or seed script) and stored Fernet-encrypted in the analytics DB.
+> Two secrets are **not** env vars — they're entered via the admin UI and stored
+> Fernet-encrypted in the analytics DB:
+> - the **business database URL** (Admin → Business Setup)
+> - the **LLM provider + API key** (Admin → AI Model — supports Azure OpenAI & Claude)
 
 ### 2. Start the backend
 
@@ -127,7 +131,7 @@ python scripts/seed_changepay_config.py
 
 | Layer | Technology |
 |-------|-----------|
-| AI | Pluggable LLM provider (Strategy pattern); ships with Azure OpenAI GPT-4o-mini. Swap via `LLM_PROVIDER` |
+| AI | Pluggable LLM provider (Strategy pattern) — Azure OpenAI & Claude, chosen in Admin → AI Model |
 | Backend | Python 3.12, FastAPI (async), asyncpg, SQLAlchemy (aiosqlite) |
 | Frontend | Next.js 16, TypeScript, Tailwind CSS, Zustand |
 | Charts | Plotly.js |

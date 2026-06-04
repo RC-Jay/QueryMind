@@ -68,6 +68,19 @@ class BusinessConfig(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class LLMConfig(Base):
+    """Which LLM backend the deployment uses. Singleton (id=1). Superuser-editable."""
+    __tablename__ = "llm_config"
+    __table_args__ = (CheckConstraint("id = 1", name="singleton_llm"),)
+    id = Column(Integer, primary_key=True, default=1)
+    provider = Column(Text, nullable=False)            # "azure" | "claude"
+    api_key_encrypted = Column(Text, nullable=False)   # Fernet-encrypted
+    model = Column(Text, nullable=False)               # Azure: deployment name; Claude: model id
+    endpoint = Column(Text, nullable=True)             # Azure only
+    api_version = Column(Text, nullable=True)          # Azure only
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 def _make_engine():
     settings = get_settings()
     db_path = pathlib.Path(settings.analytics_db_path)
