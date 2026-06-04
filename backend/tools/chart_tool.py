@@ -1,3 +1,4 @@
+import asyncio
 import json
 import plotly.graph_objects as go
 from tools.base import BaseTool, ToolResult
@@ -105,7 +106,8 @@ class GenerateChartTool(BaseTool):
         if fig is None:
             return ToolResult(type="text", cancelled=True, reason=f"Unsupported chart type: {chart_type}")
 
-        plotly_json = json.loads(fig.to_json())
+        # Offload Plotly serialization (CPU-bound) so it doesn't block the loop.
+        plotly_json = json.loads(await asyncio.to_thread(fig.to_json))
         result = ToolResult(type="chart", data=plotly_json, source=title)
         result.sse_event = {"event": "chart", "data": {"plotly_json": plotly_json, "title": title}}
         return result

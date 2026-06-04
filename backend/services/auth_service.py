@@ -5,6 +5,7 @@ This module is transport-agnostic: it has no knowledge of FastAPI or HTTP.
 FastAPI dependency wiring (get_current_user, require_superuser) lives in
 api/deps.py and builds on these primitives.
 """
+import asyncio
 from datetime import datetime, timedelta, timezone
 import bcrypt
 from jose import JWTError, jwt
@@ -18,6 +19,17 @@ def hash_password(plain: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
+
+
+# bcrypt is deliberately slow (~50-100ms) and releases the GIL, so offloading it
+# to a thread gives real parallelism and keeps the event loop responsive. Use
+# these in the async request path; the sync versions remain for CLI scripts/tests.
+async def hash_password_async(plain: str) -> str:
+    return await asyncio.to_thread(hash_password, plain)
+
+
+async def verify_password_async(plain: str, hashed: str) -> bool:
+    return await asyncio.to_thread(verify_password, plain, hashed)
 
 
 def _create_token(data: dict, expires_delta: timedelta) -> str:

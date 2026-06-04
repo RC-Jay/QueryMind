@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from db.analytics import get_session, User
 from services.auth_service import (
-    verify_password, create_access_token, create_refresh_token, decode_token,
+    verify_password_async, create_access_token, create_refresh_token, decode_token,
 )
 from services.user_service import change_own_password
 from api.deps import get_current_user
@@ -29,7 +29,7 @@ def _user_out(user: User) -> UserOut:
 async def login(body: LoginRequest, response: Response, session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
-    if not user or not verify_password(body.password, user.password_hash):
+    if not user or not await verify_password_async(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")

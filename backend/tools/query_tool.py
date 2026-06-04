@@ -1,3 +1,4 @@
+import asyncio
 import re
 import time
 from uuid import uuid4
@@ -5,6 +6,13 @@ from typing import Callable, Awaitable
 from tools.base import BaseTool, ToolResult, AuditEntry
 from db.safety import validate_sql
 from services.confirmation import ConfirmationBroker
+
+
+def _materialize_rows(rows) -> tuple[list, list]:
+    """Stringify up to 1000 result rows. CPU-bound (O(rows × cols)) — offloaded."""
+    columns = list(rows[0].keys())
+    data_rows = [[str(v) if v is not None else None for v in row.values()] for row in rows[:1000]]
+    return columns, data_rows
 
 
 def _parse_explain_cost(plan_line: str) -> float:
@@ -83,8 +91,7 @@ class ExecuteQueryTool(BaseTool):
                 source=description, audit=audit,
             )
 
-        columns = list(rows[0].keys())
-        data_rows = [[str(v) if v is not None else None for v in row.values()] for row in rows[:1000]]
+        columns, data_rows = await asyncio.to_thread(_materialize_rows, rows)
 
         result = ToolResult(
             type="table",

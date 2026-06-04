@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from db.analytics import User
-from services.auth_service import hash_password
+from services.auth_service import hash_password_async
 from exceptions import ConflictError, ValidationError, NotFoundError
 
 
@@ -23,7 +23,7 @@ async def create_user(
     user = User(
         email=email,
         name=name,
-        password_hash=hash_password(password),
+        password_hash=await hash_password_async(password),
         is_active=True,
         is_superuser=False,
         force_password_change=True,
@@ -64,7 +64,7 @@ async def reset_password(session: AsyncSession, user_id: int, new_password: str)
     user = result.scalar_one_or_none()
     if not user:
         raise NotFoundError("User not found")
-    user.password_hash = hash_password(new_password)
+    user.password_hash = await hash_password_async(new_password)
     user.force_password_change = True
     await session.commit()
     await session.refresh(user)
@@ -74,7 +74,7 @@ async def reset_password(session: AsyncSession, user_id: int, new_password: str)
 async def change_own_password(session: AsyncSession, user_id: int, new_password: str) -> User:
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    user.password_hash = hash_password(new_password)
+    user.password_hash = await hash_password_async(new_password)
     user.force_password_change = False
     await session.commit()
     await session.refresh(user)
