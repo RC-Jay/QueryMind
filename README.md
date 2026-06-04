@@ -60,9 +60,11 @@ cat .env
 
 Required variables:
 ```
-ANALYTICS_DB_PATH=
+ANALYTICS_DB_URL=            # postgresql+asyncpg://user@host:5432/querymind_analytics
+                             # (omit to fall back to a local SQLite file — dev only)
 CONFIG_ENCRYPTION_KEY=       # Fernet key — python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 JWT_SECRET_KEY=              # openssl rand -hex 32
+REDIS_URL=                   # redis://localhost:6379/0 (empty → in-process confirmation broker)
 
 # Optional — only used to bootstrap the LLM config on first run if none exists.
 # After first run, the LLM provider/credentials live in the DB (Admin → AI Model).
@@ -104,15 +106,23 @@ Navigate to **http://localhost:3000**
 cd backend
 source .venv/bin/activate
 
-# 1. Create the superuser (run once)
+# 1. Create the analytics database (one-time) and run migrations
+createdb querymind_analytics                 # or your managed Postgres
+alembic upgrade head                          # builds the schema (Alembic-owned)
+
+# 2. Create the superuser (run once)
 python scripts/create_superuser.py
 
-# 2a. ChangePay deployment — seed domain config automatically
+# 3a. ChangePay deployment — seed domain config automatically
 python scripts/seed_changepay_config.py
 
-# 2b. Any other business — log in as superuser and configure via
+# 3b. Any other business — log in as superuser and configure via
 #     Admin → Business Setup in the UI
 ```
+
+> **Schema changes** are managed by Alembic. After pulling changes that alter
+> the schema, run `alembic upgrade head`. (The SQLite dev fallback auto-creates
+> tables; Postgres always uses migrations.)
 
 ---
 

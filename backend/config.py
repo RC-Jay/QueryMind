@@ -18,8 +18,10 @@ class Settings(BaseSettings):
     azure_openai_deployment: str
     azure_openai_api_version: str
 
-    # Analytics SQLite
-    analytics_db_path: str
+    # Analytics DB. Prefer ANALYTICS_DB_URL (e.g. postgresql+asyncpg://…); the
+    # SQLite path is the dev/test fallback when no URL is set.
+    analytics_db_url: str = ""
+    analytics_db_path: str = "./data/analytics.db"
 
     # Encryption key for business DB URL at rest (Fernet)
     config_encryption_key: str

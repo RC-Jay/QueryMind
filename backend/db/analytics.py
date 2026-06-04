@@ -86,8 +86,14 @@ def _make_engine():
 
 
 def get_analytics_db_url() -> str:
-    """Single source of truth for the analytics DB URL (app engine + Alembic)."""
+    """Single source of truth for the analytics DB URL (app engine + Alembic).
+
+    Prefers ANALYTICS_DB_URL (Postgres in real deployments); falls back to a
+    local SQLite file for dev/test when no URL is configured.
+    """
     settings = get_settings()
+    if settings.analytics_db_url:
+        return settings.analytics_db_url
     db_path = pathlib.Path(settings.analytics_db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite+aiosqlite:///{db_path}"
@@ -98,8 +104,15 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=As
 
 
 async def init_db() -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Ensure the schema exists.
+
+    For Postgres (real deployments) the schema is owned by Alembic — run
+    `alembic upgrade head`; this is a no-op. For the SQLite dev/test fallback we
+    create tables directly for zero-friction local startup.
+    """
+    if get_analytics_db_url().startswith("sqlite"):
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
 
 async def get_session() -> AsyncSession:

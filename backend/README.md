@@ -46,8 +46,11 @@ backend/
 │   ├── chart_tool.py           # generate_chart — Plotly figure JSON
 │   └── kpi_tool.py             # get_kpi_snapshot — runs KPI SQL from business_config
 │
+├── alembic/                    # DB migrations (env.py + versions/) — owns the Postgres schema
+├── alembic.ini
+│
 ├── db/
-│   ├── analytics.py            # SQLAlchemy async engine + ORM models (SQLite via aiosqlite)
+│   ├── analytics.py            # SQLAlchemy async engine + ORM models; get_analytics_db_url()
 │   ├── business_db.py          # asyncpg pool — built from decrypted business_config.db_url
 │   ├── redis_client.py         # shared async Redis client (confirmation broker, future cache)
 │   └── safety.py               # SQLSafetyValidator — sqlglot AST + keyword blocklist
@@ -98,6 +101,21 @@ uvicorn main:app --port 8000 --reload
 ```
 
 Health check: `curl http://localhost:8000/api/health`
+
+## Migrations
+
+The analytics DB schema is owned by **Alembic**. Models live in `db/analytics.py`;
+migrations are generated from them.
+
+```bash
+alembic upgrade head                       # apply migrations (run on deploy / after pull)
+alembic revision --autogenerate -m "msg"   # create a migration after changing a model
+alembic downgrade -1                        # roll back one
+```
+
+`ANALYTICS_DB_URL` selects the target (Postgres in real deployments). If it's
+unset, the app falls back to a local SQLite file and auto-creates tables — dev
+convenience only; Postgres always goes through migrations.
 
 ## Tests
 
@@ -198,15 +216,16 @@ The `/api/chat/` endpoint streams Server-Sent Events. Each event has `event:` an
 
 Fine for the current single-instance, few-executives deployment; address before scaling:
 
-- **SQLite analytics DB** — single-writer; serializes conversation/message writes. Move to PostgreSQL for higher write concurrency.
 - **One pool per worker** — total Postgres connections = `workers × pool max_size`; tune against the server's `max_connections`.
 - **SSE streams are worker-pinned** — a streaming response lives on the worker that accepted it. Fine behind a load balancer (the connection stays open to that worker), but it means a worker restart drops in-flight streams.
 
-**Resolved:** cross-worker expensive-query confirmation. The confirm signal now
-flows through a `ConfirmationBroker` (`services/confirmation.py`) — Redis
-(`RPUSH`/`BLPOP`, race-free) when `REDIS_URL` is set, with an in-process
-fallback for single-worker/local/test. So `POST /api/chat/confirm/{id}` may land
-on any worker.
+**Resolved:**
+- *Cross-worker expensive-query confirmation* — the confirm signal flows through
+  a `ConfirmationBroker` (`services/confirmation.py`): Redis (`RPUSH`/`BLPOP`,
+  race-free) when `REDIS_URL` is set, in-process fallback otherwise. So
+  `POST /api/chat/confirm/{id}` may land on any worker.
+- *Analytics DB write concurrency* — moved from SQLite to PostgreSQL
+  (`ANALYTICS_DB_URL`), schema managed by Alembic. SQLite remains a dev fallback.
 
 ---
 
