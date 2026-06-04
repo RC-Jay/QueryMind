@@ -1,7 +1,5 @@
 import asyncio
 import re
-import time
-import json
 from uuid import uuid4
 from typing import Callable, Awaitable
 from tools.base import BaseTool, ToolResult
@@ -63,48 +61,24 @@ class ExecuteQueryTool(BaseTool):
         if not validation.ok:
             return ToolResult(type="text", cancelled=True, reason=f"Query blocked: {validation.reason}")
 
-        async with self._pool.acquire() as conn:
-            # 2. EXPLAIN to estimate cost
-            try:
-                explain_rows = await conn.fetch(f"EXPLAIN {sql}")
-                cost = _parse_explain_cost(str(explain_rows[0][0])) if explain_rows else 0.0
-            except Exception:
-                cost = 0.0
+        # 2. EXPLAIN to estimate cost (short-lived connection, released immediately)
+        cost = await self._estimate_cost(sql)
 
-            # 3. Expensive query gate
-            if cost > self.cost_threshold:
-                query_id = str(uuid4())
-                event, flag = register_pending(query_id)
-                await send_event({
-                    "event": "confirmation_required",
-                    "data": {
-                        "query_id": query_id,
-                        "estimated_cost": cost,
-                        "warning": (
-                            "This query is estimated to be expensive and may impact "
-                            "platform performance during peak hours. Do you want to proceed?"
-                        ),
-                    },
-                })
-                try:
-                    await asyncio.wait_for(event.wait(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    _pending.pop(query_id, None)
-                    await send_event({"event": "confirmation_cancelled", "data": {"query_id": query_id}})
-                    return ToolResult(type="text", cancelled=True, reason="Query cancelled — no response within 30 seconds.")
+        # 3. Expensive query gate. Crucially, NO DB connection is held while we
+        #    wait on the human — otherwise pending confirmations would exhaust
+        #    the pool under concurrency.
+        if cost > self.cost_threshold:
+            approved = await self._await_confirmation(send_event, cost)
+            if approved is None:
+                return ToolResult(type="text", cancelled=True, reason="Query cancelled — no response within 30 seconds.")
+            if not approved:
+                return ToolResult(type="text", cancelled=True, reason="Query cancelled by user.")
 
-                _pending.pop(query_id, None)
-                if not flag[0]:
-                    return ToolResult(type="text", cancelled=True, reason="Query cancelled by user.")
-
-            # 4. Execute with statement timeout
-            start = time.monotonic()
-            try:
-                await conn.execute("SET statement_timeout = '10000'")
-                rows = await conn.fetch(sql)
-            except Exception as exc:
-                return ToolResult(type="text", cancelled=True, reason=f"Query failed: {exc}")
-            duration_ms = int((time.monotonic() - start) * 1000)
+        # 4. Execute on a fresh connection with a server-side statement timeout
+        try:
+            rows = await self._run_query(sql)
+        except Exception as exc:
+            return ToolResult(type="text", cancelled=True, reason=f"Query failed: {exc}")
 
         if not rows:
             return ToolResult(type="table", data={"columns": [], "rows": [], "total": 0}, source=description)
@@ -122,3 +96,47 @@ class ExecuteQueryTool(BaseTool):
             "data": {"columns": columns, "rows": data_rows, "total": len(rows), "source": description},
         }
         return result
+
+    async def _estimate_cost(self, sql: str) -> float:
+        """Run EXPLAIN on a short-lived connection and parse the upper cost bound."""
+        try:
+            async with self._pool.acquire() as conn:
+                explain_rows = await conn.fetch(f"EXPLAIN {sql}")
+            return _parse_explain_cost(str(explain_rows[0][0])) if explain_rows else 0.0
+        except Exception:
+            return 0.0
+
+    async def _await_confirmation(
+        self, send_event: Callable[[dict], Awaitable[None]], cost: float
+    ) -> bool | None:
+        """
+        Ask the user to confirm an expensive query. Holds NO DB connection while
+        waiting. Returns True (approved), False (denied), or None (timed out).
+        """
+        query_id = str(uuid4())
+        event, flag = register_pending(query_id)
+        await send_event({
+            "event": "confirmation_required",
+            "data": {
+                "query_id": query_id,
+                "estimated_cost": cost,
+                "warning": (
+                    "This query is estimated to be expensive and may impact "
+                    "platform performance during peak hours. Do you want to proceed?"
+                ),
+            },
+        })
+        try:
+            await asyncio.wait_for(event.wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            _pending.pop(query_id, None)
+            await send_event({"event": "confirmation_cancelled", "data": {"query_id": query_id}})
+            return None
+        _pending.pop(query_id, None)
+        return bool(flag[0])
+
+    async def _run_query(self, sql: str) -> list:
+        """Execute the SELECT on a fresh connection with a server-side timeout."""
+        async with self._pool.acquire() as conn:
+            await conn.execute("SET statement_timeout = '10000'")
+            return await conn.fetch(sql)

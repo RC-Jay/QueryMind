@@ -64,6 +64,54 @@ async def test_query_tool_expensive_query_requires_confirmation_then_proceeds():
     assert result.type == "table"
 
 
+class CountingPool:
+    """FakePool that tracks concurrent connection checkouts."""
+
+    def __init__(self, conn):
+        self._conn = conn
+        self.active = 0
+        self.max_active = 0
+
+    def acquire(self):
+        pool, conn = self, self._conn
+
+        class _Ctx:
+            async def __aenter__(self):
+                pool.active += 1
+                pool.max_active = max(pool.max_active, pool.active)
+                return conn
+
+            async def __aexit__(self, *exc):
+                pool.active -= 1
+                return False
+
+        return _Ctx()
+
+
+async def test_no_connection_held_during_confirmation_wait():
+    """Regression: the expensive-query gate must NOT hold a pooled connection
+    while waiting on the user, or pending confirmations would exhaust the pool."""
+    conn = FakeConn(rows=[{"x": 1}], explain_cost=999999.0)
+    pool = CountingPool(conn)
+    tool = ExecuteQueryTool(pool, cost_threshold=50000)
+
+    events = []
+    async def capture(event):
+        events.append(event)
+
+    task = asyncio.create_task(tool.execute(capture, sql="SELECT x FROM big", description="d"))
+    await asyncio.sleep(0.05)  # now parked on the confirmation wait
+
+    assert pool.active == 0, "a DB connection is being held during the human wait"
+
+    conf = next(e for e in events if e["event"] == "confirmation_required")
+    resolve_pending(conf["data"]["query_id"], approved=True)
+    result = await task
+
+    assert result.type == "table"
+    assert pool.max_active == 1  # EXPLAIN and execute never overlapped
+
+
 async def test_query_tool_expensive_query_denied():
     conn = FakeConn(rows=[{"x": 1}], explain_cost=999999.0)
     tool = ExecuteQueryTool(FakePool(conn), cost_threshold=50000)
