@@ -22,8 +22,8 @@ frontend/
 │
 ├── components/
 │   ├── chat/
-│   │   ├── ChatInterface.tsx   # Main chat component — drives SSE streaming
-│   │   ├── ChatMessage.tsx     # Single message bubble (text + chart + table + metrics)
+│   │   ├── ChatInterface.tsx   # Main chat component — drives SSE streaming, handles errors
+│   │   ├── ChatMessage.tsx     # Single message bubble (text + chart + table + metrics + error)
 │   │   ├── MessageInput.tsx    # Textarea input with send/stop buttons
 │   │   ├── PromptChips.tsx     # Starter question chips (loaded from business config)
 │   │   └── ConfirmationDialog.tsx  # Expensive query approval dialog
@@ -37,7 +37,7 @@ frontend/
 │   │   ├── UserManagement.tsx  # User list, add user modal, deactivate, reset password
 │   │   └── BusinessSetup.tsx   # Tabbed config form (connection, context, KPIs, questions)
 │   └── layout/
-│       ├── Sidebar.tsx         # Conversation history + Admin section (superuser only)
+│       ├── Sidebar.tsx         # Conversation history (inline rename via pencil icon) + Admin (superuser only)
 │       └── Header.tsx          # Business name, user name, logout
 │
 ├── lib/
@@ -111,8 +111,21 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ---
 
+## Error Handling
+
+- **Chat errors** — when a turn fails (DB unreachable, LLM timeout, etc.), a red error box appears in the chat with the error message. The turn is marked as failed and no partial responses are shown.
+- **KPI panel errors** — if the KPI snapshot endpoint fails, the panel shows a warning icon + error message instead of skeleton placeholders. This gives immediate visibility when the business DB is down.
+- **Health checks** — the backend runs a cached health check (60s TTL) before each chat turn to fail fast if the business DB is unreachable, avoiding wasted LLM calls.
+
+## Conversation Features
+
+- **Inline rename** — click the pencil icon on any conversation in the sidebar to edit its title. Hitting Enter saves; Escape cancels.
+- **KPI auto-refresh** — the KPI panel refreshes every 10 minutes automatically, with a manual refresh button visible. Shows "Updated Xm ago" timestamp.
+- **History window** — by default, the last 20 conversation turns are sent to the LLM for context. The backend can optionally summarize older turns to preserve context across longer conversations (Phase 2 feature, currently off by default).
+
 ## Notes
 
 - **Next.js 16 breaking change:** `params` in page/layout components is now a `Promise` and must be `await`ed. All dynamic routes in this project handle this correctly.
 - **No dark mode** — this is an internal executive tool. The CSS forces light mode globally to avoid rendering issues on macOS systems with dark mode enabled.
 - **No NextAuth** — authentication is handled entirely by the FastAPI backend. The frontend only manages token storage and the login form.
+- **Telemetry-free** — no analytics, no tracking. All monitoring is server-side (observability.py JSON logs).

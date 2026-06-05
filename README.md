@@ -142,12 +142,13 @@ python scripts/seed_changepay_config.py
 | Layer | Technology |
 |-------|-----------|
 | AI | Pluggable LLM provider (Strategy pattern) — Azure OpenAI & Claude, chosen in Admin → AI Model |
-| Backend | Python 3.12, FastAPI (async), asyncpg, SQLAlchemy (aiosqlite) |
+| Backend | Python 3.14, FastAPI (async), asyncpg, SQLAlchemy (async) |
 | Frontend | Next.js 16, TypeScript, Tailwind CSS, Zustand |
 | Charts | Plotly.js |
 | Auth | Custom JWT (access + refresh token, httpOnly cookie) |
-| Analytics DB | SQLite (users, conversations, business config) |
+| Analytics DB | PostgreSQL (default; SQLite fallback for dev) — users, conversations, business config, audit log |
 | Business DB | PostgreSQL (read-only, connection stored encrypted) |
+| Caching & State | Redis (confirmation broker, future response cache); in-process fallback |
 | Tests | pytest + pytest-asyncio (no external deps — fakes for LLM & Postgres) |
 
 Run the backend tests with `cd backend && pytest`. See [`backend/README.md`](backend/README.md)

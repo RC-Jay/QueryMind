@@ -53,6 +53,7 @@ backend/
 ├── db/
 │   ├── analytics.py            # SQLAlchemy async engine + ORM models; get_analytics_db_url()
 │   ├── business_db.py          # asyncpg pool — built from decrypted business_config.db_url
+│   │                           # + health check cache (60s TTL) + acquire timeout wrapper
 │   ├── redis_client.py         # shared async Redis client (confirmation broker, future cache)
 │   └── safety.py               # SQLSafetyValidator — sqlglot AST + keyword blocklist
 │
@@ -64,7 +65,10 @@ backend/
 │   ├── llm_config_service.py   # LLM provider + credentials CRUD (API key encrypted)
 │   ├── confirmation.py         # ConfirmationBroker (Redis BLPOP + in-process fallback)
 │   ├── audit_service.py        # Best-effort audit logging of agent-run SQL
-│   └── conversation_service.py # Conversation + message persistence
+│   ├── conversation_service.py # Conversation + message persistence + rename
+│   ├── chat_service.py         # Transport-free chat turn logic (history building, persistence, audit)
+│   ├── history_service.py      # Conversation context window building (ContentExtractor + HistoryStrategy)
+│   └── kpi_service.py          # Parallel KPI execution + formatting
 │
 ├── scripts/
 │   ├── create_superuser.py     # Bootstrap the first superuser (run once)
@@ -167,6 +171,30 @@ No changes to the orchestrator, tools, or routes.
 
 ---
 
+## History & Context Management
+
+The `services/history_service.py` module provides two strategies for building the conversation context sent to the LLM:
+
+**`RecentOnlyStrategy` (default):** Last `HISTORY_TURNS` messages only (env var, default 20). No LLM overhead.
+
+**`SummarizedStrategy` (Phase 2):** When enabled via `HISTORY_SUMMARIZE=true`, older messages are summarized by the LLM and cached on the conversation. Summary is regenerated only when new messages fall outside the window, so long conversations reuse the cached summary. Enables Phase 2 "drill-down" features that reference earlier context.
+
+Both strategies are pluggable via the `HistoryStrategy` protocol. The `ContentExtractor` protocol allows Phase 2 work to replay rich content (table row counts, chart titles) rather than text alone — no code changes needed to the history or orchestrator layers.
+
+---
+
+## Business DB Health Check
+
+`db/business_db.py` includes a health check cache that runs `SELECT 1` on the business DB every 60 seconds. Before each chat turn, `services/chat_service.run_turn` calls `check_pool_health()`:
+
+- **Cache hit (most turns)** — instant rejection if DB is down, no LLM call wasted
+- **Cache miss (first turn or after 60s)** — real ping, result cached for 60s
+- **Lazy init** — the pool is built on first request if not ready at startup, enabling resilience during deploy
+
+This prevents the user's LLM credits being burned on turns that will fail at the tool-execute stage.
+
+---
+
 ## Key Endpoints
 
 | Method | Path | Auth | Description |
@@ -186,7 +214,7 @@ No changes to the orchestrator, tools, or routes.
 | `POST` | `/api/admin/users` | Superuser | Create a user |
 | `POST` | `/api/admin/users/{id}/deactivate` | Superuser | Deactivate a user |
 | `POST` | `/api/admin/users/{id}/reset-password` | Superuser | Reset user password |
-| `GET`  | `/api/admin/business-config` | Superuser | Get business config (DB URL masked) |
+| `GET`  | `/api/admin/business-config` | Superuser | Get business config (full DB URL shown to superuser only) |
 | `PUT`  | `/api/admin/business-config` | Superuser | Update business config |
 | `POST` | `/api/admin/business-config/test-connection` | Superuser | Test DB URL before saving |
 | `GET`  | `/api/admin/llm-config` | Superuser | Get LLM provider config (API key masked) |
