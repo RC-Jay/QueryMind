@@ -118,3 +118,18 @@ async def set_conversation_title(session: AsyncSession, conv_id: str, title: str
     if conv and not conv.title:
         conv.title = title[:100]
         await session.commit()
+
+
+async def rename_conversation(
+    session: AsyncSession, conv_id: str, user_id: int, title: str
+) -> bool:
+    """Rename a conversation. Returns False if not found or not owned by user."""
+    result = await session.execute(
+        select(Conversation).where(Conversation.id == conv_id, Conversation.user_id == user_id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv:
+        return False
+    conv.title = title[:100]
+    await session.commit()
+    return True

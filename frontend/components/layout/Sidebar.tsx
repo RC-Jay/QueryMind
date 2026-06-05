@@ -1,9 +1,10 @@
 "use client";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useChatStore } from "@/store/chatStore";
-import { Plus, MessageSquare, Trash2, Settings, Users, Sparkles } from "lucide-react";
+import { Plus, MessageSquare, Trash2, Settings, Users, Sparkles, Pencil } from "lucide-react";
 import { clsx } from "clsx";
 import api from "@/lib/api";
 
@@ -11,11 +12,48 @@ export default function Sidebar() {
   const { user } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const { conversations, activeConversationId, removeConversation, setActiveConversation, setMessages, reset } = useChatStore();
+  const {
+    conversations, activeConversationId,
+    removeConversation, setActiveConversation, updateConversationTitle, reset,
+  } = useChatStore();
+
+  // Inline rename state — only one conversation editable at a time.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus the input as soon as edit mode opens.
+  useEffect(() => {
+    if (editingId) inputRef.current?.focus();
+  }, [editingId]);
 
   function handleNewChat() {
     reset();
     router.push("/chat");
+  }
+
+  function startRename(e: React.MouseEvent, id: string, currentTitle: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraftTitle(currentTitle || "");
+    setEditingId(id);
+  }
+
+  async function commitRename(id: string) {
+    const trimmed = draftTitle.trim();
+    setEditingId(null);
+    if (!trimmed) return;                             // empty → discard
+    try {
+      await api.patch(`/api/chat/conversations/${id}`, { title: trimmed });
+      updateConversationTitle(id, trimmed);
+    } catch {
+      // silently ignore — title stays as-is in the sidebar
+    }
+  }
+
+  function handleRenameKeyDown(e: React.KeyboardEvent, id: string) {
+    if (e.key === "Enter") { e.preventDefault(); commitRename(id); }
+    if (e.key === "Escape") { e.preventDefault(); setEditingId(null); }
   }
 
   async function handleDelete(e: React.MouseEvent, id: string) {
@@ -49,25 +87,56 @@ export default function Sidebar() {
         )}
         {conversations.map((conv) => (
           <div key={conv.id} className="group relative">
-            <Link
-              href={`/chat/${conv.id}`}
-              onClick={() => setActiveConversation(conv.id)}
-              className={clsx(
-                "flex items-center gap-2 px-4 py-2.5 text-sm truncate transition-colors",
-                activeConversationId === conv.id
-                  ? "bg-slate-700 text-white"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              )}
-            >
-              <MessageSquare size={14} className="flex-shrink-0" />
-              <span className="truncate">{conv.title || "New conversation"}</span>
-            </Link>
-            <button
-              onClick={(e) => handleDelete(e, conv.id)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all p-1"
-            >
-              <Trash2 size={13} />
-            </button>
+            {editingId === conv.id ? (
+              /* ── Inline rename input ── */
+              <div className="flex items-center gap-2 px-4 py-2.5">
+                <MessageSquare size={14} className="flex-shrink-0 text-slate-400" />
+                <input
+                  ref={inputRef}
+                  value={draftTitle}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  onBlur={() => commitRename(conv.id)}
+                  onKeyDown={(e) => handleRenameKeyDown(e, conv.id)}
+                  className="flex-1 min-w-0 bg-slate-700 text-white text-sm rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-blue-500"
+                  maxLength={100}
+                />
+              </div>
+            ) : (
+              /* ── Normal row ── */
+              <Link
+                href={`/chat/${conv.id}`}
+                onClick={() => setActiveConversation(conv.id)}
+                className={clsx(
+                  "flex items-center gap-2 px-4 py-2.5 text-sm truncate transition-colors pr-16",
+                  activeConversationId === conv.id
+                    ? "bg-slate-700 text-white"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                )}
+              >
+                <MessageSquare size={14} className="flex-shrink-0" />
+                <span className="truncate">{conv.title || "New conversation"}</span>
+              </Link>
+            )}
+
+            {/* Action buttons — visible on row hover, hidden in edit mode */}
+            {editingId !== conv.id && (
+              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                <button
+                  onClick={(e) => startRename(e, conv.id, conv.title || "")}
+                  title="Rename"
+                  className="text-slate-500 hover:text-slate-200 p-1 rounded"
+                >
+                  <Pencil size={12} />
+                </button>
+                <button
+                  onClick={(e) => handleDelete(e, conv.id)}
+                  title="Delete"
+                  className="text-slate-500 hover:text-red-400 p-1 rounded"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>

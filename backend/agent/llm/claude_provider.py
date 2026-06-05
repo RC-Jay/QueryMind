@@ -77,6 +77,11 @@ class ClaudeProvider:
         self._temperature = temperature
         self._max_tokens = max_tokens
 
+    @classmethod
+    def from_config(cls, api_key: str, config) -> "ClaudeProvider":
+        """Build from a decrypted API key and an LLMConfig row."""
+        return cls(api_key=api_key, model=config.model)
+
     async def complete(self, messages: list[dict], tools: list[dict]) -> LLMResponse:
         system, conv = _split_system(messages)
         resp = await self._client.messages.create(

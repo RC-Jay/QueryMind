@@ -5,12 +5,13 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.analytics import get_session, User
 from services.conversation_service import (
-    get_conversation, list_conversations, delete_conversation, get_messages,
+    get_conversation, list_conversations, delete_conversation, get_messages, rename_conversation,
 )
 from services.chat_service import run_turn
 from services.confirmation import get_confirmation_broker
 from api.schemas.chat import (
-    ChatRequest, ConfirmRequest, ConversationSummaryOut, MessageOut, ConversationDetailOut,
+    ChatRequest, ConfirmRequest, ConversationRenameRequest,
+    ConversationSummaryOut, MessageOut, ConversationDetailOut,
 )
 from api.schemas.common import DetailResponse
 from api.deps import get_current_user, get_business_pool
@@ -52,7 +53,7 @@ async def chat(
     if current_user.force_password_change:
         raise HTTPException(status_code=403, detail="Password change required before using chat")
 
-    # Backpressure: acquire a concurrency slot, or shed load with 429.
+    # Backpressure: acquire a concurrency slot or shed the load with 429.
     if not await _acquire_chat_slot():
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -119,6 +120,20 @@ async def get_conv(
         title=conv.title,
         messages=[MessageOut.model_validate(m) for m in messages],
     )
+
+
+@router.patch("/conversations/{conv_id}", response_model=ConversationSummaryOut)
+async def rename_conv(
+    conv_id: str,
+    body: ConversationRenameRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    renamed = await rename_conversation(session, conv_id, current_user.id, body.title)
+    if not renamed:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    conv = await get_conversation(session, conv_id, current_user.id)
+    return ConversationSummaryOut.model_validate(conv)
 
 
 @router.delete("/conversations/{conv_id}", status_code=status.HTTP_204_NO_CONTENT)

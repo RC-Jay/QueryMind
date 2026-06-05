@@ -16,7 +16,7 @@ from services.llm_config_service import get_llm_config_or_raise
 from services.confirmation import get_confirmation_broker
 from services.audit_service import record_queries
 from services.conversation_service import (
-    create_conversation, get_conversation, append_message, set_conversation_title,
+    create_conversation, get_conversation, append_message,
 )
 from services.history_service import get_history_strategy, TextOnlyExtractor
 from agent.orchestrator import AgentOrchestrator
@@ -42,7 +42,8 @@ async def run_turn(
         if not conv:
             raise NotFoundError("Conversation not found")
     else:
-        conv = await create_conversation(session, user_id)
+        # Title is set at creation time from the opening message — never updated.
+        conv = await create_conversation(session, user_id, title=message[:80])
 
     # Build the LLM provider first — the history strategy may need it for
     # summarisation (SummarizedStrategy calls llm.complete on the pre-window set).
@@ -61,7 +62,6 @@ async def run_turn(
     )
 
     await append_message(session, conv.id, "user", {"text": message})
-    await set_conversation_title(session, conv.id, message[:80])
 
     orchestrator = AgentOrchestrator.build(config, llm, pool, broker=get_confirmation_broker())
 

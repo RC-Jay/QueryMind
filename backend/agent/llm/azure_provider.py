@@ -22,6 +22,16 @@ class AzureOpenAIProvider:
         self._deployment = deployment
         self._temperature = temperature
 
+    @classmethod
+    def from_config(cls, api_key: str, config) -> "AzureOpenAIProvider":
+        """Build from a decrypted API key and an LLMConfig row."""
+        return cls(
+            endpoint=config.endpoint,
+            api_key=api_key,
+            api_version=config.api_version,
+            deployment=config.model,
+        )
+
     async def complete(self, messages: list[dict], tools: list[dict]) -> LLMResponse:
         resp = await self._client.chat.completions.create(
             model=self._deployment,

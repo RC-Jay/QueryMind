@@ -15,6 +15,10 @@ class ConfirmRequest(BaseModel):
     approved: bool
 
 
+class ConversationRenameRequest(BaseModel):
+    title: str
+
+
 # ── Internal transport ────────────────────────────────────────────────────────
 
 class SSEEvent(BaseModel):
