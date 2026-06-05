@@ -1,6 +1,7 @@
+import json
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
-from typing import Any
+from services import crypto
 
 
 # ── Requests ──────────────────────────────────────────────────────────────────
@@ -61,7 +62,6 @@ class CreateUserResponse(BaseModel):
 
 def _maybe_json(value):
     """Accept a JSON string (Text column) or an already-parsed value (JSON column)."""
-    import json
     return json.loads(value) if isinstance(value, str) else value
 
 
@@ -81,7 +81,6 @@ class BusinessConfigOut(BaseModel):
 
     @classmethod
     def from_model(cls, c) -> "BusinessConfigOut":
-        from services import crypto
         return cls(
             business_name=c.business_name,
             business_description=c.business_description,
@@ -107,7 +106,6 @@ class LLMConfigOut(BaseModel):
 
     @classmethod
     def from_model(cls, c) -> "LLMConfigOut":
-        from services import crypto
         return cls(
             provider=c.provider,
             model=c.model,

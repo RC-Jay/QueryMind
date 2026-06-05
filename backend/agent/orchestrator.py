@@ -8,6 +8,7 @@ from tools.kpi_tool import GetKPISnapshotTool
 from agent.prompt import build_system_prompt
 from agent.llm.base import LLMProvider, ToolCall
 from db.analytics import BusinessConfig
+from services.confirmation import InMemoryConfirmationBroker
 
 
 def _tool_result_message(tool_call_id: str, content: str) -> dict:
@@ -44,7 +45,6 @@ class AgentOrchestrator:
     @classmethod
     def build(cls, config: BusinessConfig, llm: LLMProvider, pool, broker=None) -> "AgentOrchestrator":
         """Wire the standard toolset with an injected DB pool and confirmation broker."""
-        from services.confirmation import InMemoryConfirmationBroker
         broker = broker or InMemoryConfirmationBroker()
         registry = ToolRegistry()
         kpi_defs = config.kpi_definitions  # JSON column → already a list

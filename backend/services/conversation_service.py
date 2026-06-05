@@ -51,7 +51,6 @@ async def append_message(
     result = await session.execute(select(Conversation).where(Conversation.id == conv_id))
     conv = result.scalar_one_or_none()
     if conv:
-        from sqlalchemy import func
         conv.updated_at = func.now()
     await session.commit()
     return msg
@@ -109,14 +108,6 @@ async def update_conversation_summary(
     if conv:
         conv.summary = summary
         conv.summary_checkpoint = checkpoint
-        await session.commit()
-
-
-async def set_conversation_title(session: AsyncSession, conv_id: str, title: str) -> None:
-    result = await session.execute(select(Conversation).where(Conversation.id == conv_id))
-    conv = result.scalar_one_or_none()
-    if conv and not conv.title:
-        conv.title = title[:100]
         await session.commit()
 
 
