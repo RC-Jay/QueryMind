@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     chat_acquire_timeout_seconds: float = 10 # wait this long for a slot before 429
     agent_run_timeout_seconds: float = 120   # hard ceiling on one agent turn
 
+    # Conversation history window fed to the LLM each turn.
+    # Only the most recent `history_turns` messages are included; older messages
+    # are either discarded (summarize=False) or summarised by the LLM (summarize=True).
+    history_turns: int = 20
+    history_summarize: bool = False          # set True to enable LLM-based summarization
+
     # App
     cors_origins: str = "http://localhost:3000"
     environment: str = "development"

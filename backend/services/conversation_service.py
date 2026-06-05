@@ -1,7 +1,7 @@
 import uuid
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from db.analytics import Conversation, Message
 
 
@@ -62,6 +62,54 @@ async def get_messages(session: AsyncSession, conv_id: str) -> list[Message]:
         select(Message).where(Message.conversation_id == conv_id).order_by(Message.created_at)
     )
     return result.scalars().all()
+
+
+async def get_message_count(session: AsyncSession, conv_id: str) -> int:
+    """Total number of messages in a conversation."""
+    result = await session.execute(
+        select(func.count()).select_from(Message).where(Message.conversation_id == conv_id)
+    )
+    return result.scalar() or 0
+
+
+async def get_recent_messages(session: AsyncSession, conv_id: str, limit: int) -> list[Message]:
+    """Last `limit` messages in chronological order. Efficient: fetches only what's needed."""
+    result = await session.execute(
+        select(Message)
+        .where(Message.conversation_id == conv_id)
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+    )
+    return list(reversed(result.scalars().all()))
+
+
+async def get_older_messages(session: AsyncSession, conv_id: str, count: int) -> list[Message]:
+    """Oldest `count` messages — the pre-window set passed to the summarisation LLM call."""
+    result = await session.execute(
+        select(Message)
+        .where(Message.conversation_id == conv_id)
+        .order_by(Message.created_at.asc())
+        .limit(count)
+    )
+    return result.scalars().all()
+
+
+async def get_conversation_internal(session: AsyncSession, conv_id: str) -> Conversation | None:
+    """Load a conversation by id only — no ownership check. Internal/service use only."""
+    result = await session.execute(select(Conversation).where(Conversation.id == conv_id))
+    return result.scalar_one_or_none()
+
+
+async def update_conversation_summary(
+    session: AsyncSession, conv_id: str, summary: str, checkpoint: str
+) -> None:
+    """Persist a generated summary and the message_id it was summarised up to."""
+    result = await session.execute(select(Conversation).where(Conversation.id == conv_id))
+    conv = result.scalar_one_or_none()
+    if conv:
+        conv.summary = summary
+        conv.summary_checkpoint = checkpoint
+        await session.commit()
 
 
 async def set_conversation_title(session: AsyncSession, conv_id: str, title: str) -> None:

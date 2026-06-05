@@ -6,7 +6,6 @@ event dicts ({event, data}). The HTTP layer (api/routes/chat.py) handles auth,
 backpressure, and SSE wire-formatting.
 """
 import asyncio
-import json
 from typing import AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,12 +16,11 @@ from services.llm_config_service import get_llm_config_or_raise
 from services.confirmation import get_confirmation_broker
 from services.audit_service import record_queries
 from services.conversation_service import (
-    create_conversation, get_conversation, append_message, get_messages, set_conversation_title,
+    create_conversation, get_conversation, append_message, set_conversation_title,
 )
+from services.history_service import get_history_strategy, TextOnlyExtractor
 from agent.orchestrator import AgentOrchestrator
 from agent.llm.factory import create_llm_provider
-
-HISTORY_TURNS = 20
 
 
 async def run_turn(
@@ -36,6 +34,7 @@ async def run_turn(
     """Run one chat turn. Eager setup (incl. NotFoundError) happens before the
     returned generator starts streaming, so a 404 surfaces before the SSE stream.
     Returns an async generator yielding event dicts."""
+    settings = get_settings()
     config = await get_config_or_raise(session)
 
     if conversation_id:
@@ -45,17 +44,25 @@ async def run_turn(
     else:
         conv = await create_conversation(session, user_id)
 
-    # Last N turns as plain text (context-replay of charts/tables is Phase 2).
-    raw_messages = await get_messages(session, conv.id)
-    history = [
-        {"role": m.role, "content": json.loads(m.content).get("text", "")}
-        for m in raw_messages[-HISTORY_TURNS:]
-    ]
+    # Build the LLM provider first — the history strategy may need it for
+    # summarisation (SummarizedStrategy calls llm.complete on the pre-window set).
+    llm = create_llm_provider(await get_llm_config_or_raise(session))
+
+    # Build the context window for this turn.
+    # history_result.cache_breakpoint is available for future prompt-caching
+    # integration (e.g. mark messages[:cache_breakpoint] as stable prefix for
+    # Claude/Azure caching) — no strategy changes needed when that lands.
+    strategy = get_history_strategy(settings.history_summarize)
+    history_result = await strategy.build(
+        session, conv.id,
+        max_turns=settings.history_turns,
+        extractor=TextOnlyExtractor(),
+        llm=llm,
+    )
 
     await append_message(session, conv.id, "user", {"text": message})
     await set_conversation_title(session, conv.id, message[:80])
 
-    llm = create_llm_provider(await get_llm_config_or_raise(session))
     orchestrator = AgentOrchestrator.build(config, llm, pool, broker=get_confirmation_broker())
 
     event_queue: asyncio.Queue = asyncio.Queue()
@@ -66,12 +73,11 @@ async def run_turn(
         if event.get("event") == "text_delta":
             collected_text.append(event["data"].get("delta", ""))
 
-    run_timeout = get_settings().agent_run_timeout_seconds
-
     async def run_and_signal():
         try:
             await asyncio.wait_for(
-                orchestrator.run(history, message, send_event), timeout=run_timeout
+                orchestrator.run(history_result.messages, message, send_event),
+                timeout=settings.agent_run_timeout_seconds,
             )
         except (asyncio.TimeoutError, TimeoutError):
             await event_queue.put({"event": "error", "data": {"message": "The request took too long and was stopped."}})
