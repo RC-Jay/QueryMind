@@ -10,7 +10,7 @@ from typing import AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
-from exceptions import NotFoundError
+from exceptions import NotFoundError, ServiceUnavailableError
 from services.business_config_service import get_config_or_raise
 from services.llm_config_service import get_llm_config_or_raise
 from services.confirmation import get_confirmation_broker
@@ -21,6 +21,7 @@ from services.conversation_service import (
 from services.history_service import get_history_strategy, TextOnlyExtractor
 from agent.orchestrator import AgentOrchestrator
 from agent.llm.factory import create_llm_provider
+from db.business_db import check_pool_health
 
 
 async def run_turn(
@@ -35,6 +36,15 @@ async def run_turn(
     returned generator starts streaming, so a 404 surfaces before the SSE stream.
     Returns an async generator yielding event dicts."""
     settings = get_settings()
+
+    # Fail fast before touching the LLM if the business DB is unreachable.
+    # Result is cached for 60s so this costs one SELECT 1 per minute, not per turn.
+    if not await check_pool_health():
+        raise ServiceUnavailableError(
+            "The business database is currently unreachable. "
+            "Please try again later or contact your administrator."
+        )
+
     config = await get_config_or_raise(session)
 
     if conversation_id:

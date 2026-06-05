@@ -53,6 +53,7 @@ export interface MessageContent {
   source?: string;
   cancelled?: boolean;
   reason?: string;
+  error?: string;   // set when the turn fails — rendered as a distinct error UI
 }
 
 export interface Message {

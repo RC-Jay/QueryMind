@@ -26,7 +26,6 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 @router.get("/users", response_model=list[AdminUserOut])
 async def get_users(
     _: User = Depends(require_superuser),
-    session: AsyncSession = Depends(get_session),
 ):
     users = await list_users(session)
     return [AdminUserOut.model_validate(u) for u in users]

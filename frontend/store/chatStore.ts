@@ -24,6 +24,7 @@ interface ChatStore {
   addConversation: (conv: ConversationSummary) => void;
   removeConversation: (id: string) => void;
   updateConversationTitle: (id: string, title: string) => void;
+  setMessageError: (id: string, error: string) => void;
   reset: () => void;
 }
 
@@ -99,6 +100,13 @@ export const useChatStore = create<ChatStore>((set) => ({
   updateConversationTitle: (id, title) =>
     set((s) => ({
       conversations: s.conversations.map((c) => (c.id === id ? { ...c, title } : c)),
+    })),
+
+  setMessageError: (id, error) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === id ? { ...m, content: { ...m.content, error }, isStreaming: false } : m
+      ),
     })),
 
   reset: () => set({ messages: [], activeConversationId: null, isStreaming: false }),

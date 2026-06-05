@@ -17,15 +17,18 @@ export default function KPIPanel() {
   const [kpis, setKpis] = useState<KPI[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchKPIs = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const { data } = await api.get("/api/kpi/snapshot");
       setKpis(data.kpis);
       setLastUpdated(new Date());
-    } catch {
-      // silently fail — KPIs are not critical
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(detail || "Could not load KPIs — business database may be unreachable.");
     } finally {
       setLoading(false);
     }
@@ -48,7 +51,12 @@ export default function KPIPanel() {
     <div className="bg-white border-b border-slate-200 px-6 py-3">
       <div className="flex items-center justify-between">
         <div className="flex gap-6">
-          {kpis.length === 0 && !loading
+          {error ? (
+            <div className="flex items-center gap-2 text-sm text-red-500">
+              <span>⚠</span>
+              <span>{error}</span>
+            </div>
+          ) : kpis.length === 0 && !loading
             ? Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="h-12 w-40 bg-slate-100 animate-pulse rounded-lg" />
               ))

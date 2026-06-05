@@ -66,10 +66,11 @@ def _maybe_json(value):
 
 
 class BusinessConfigOut(BaseModel):
-    """Business config with the DB URL masked (never exposes credentials)."""
+    """Business config returned to superusers. Full DB URL is decrypted — this
+    endpoint is superuser-only so credentials are safe to return."""
     business_name: str
     business_description: str
-    db_url_masked: str
+    db_url: str               # full decrypted URL — superuser-only endpoint
     domain_context: str
     business_rules: list[dict]
     table_descriptions: dict
@@ -84,7 +85,7 @@ class BusinessConfigOut(BaseModel):
         return cls(
             business_name=c.business_name,
             business_description=c.business_description,
-            db_url_masked=crypto.mask(c.db_url_encrypted),
+            db_url=crypto.decrypt(c.db_url_encrypted),
             domain_context=c.domain_context,
             business_rules=_maybe_json(c.business_rules),
             table_descriptions=_maybe_json(c.table_descriptions),

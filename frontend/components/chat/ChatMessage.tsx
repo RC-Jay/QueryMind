@@ -70,6 +70,14 @@ export default function ChatMessage({ message, onConfirm }: Props) {
             {content.reason || "This action was cancelled."}
           </div>
         )}
+
+        {/* Error — distinct from cancelled; shown when the turn itself failed */}
+        {content.error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5 rounded-xl flex items-start gap-2">
+            <span className="mt-0.5 flex-shrink-0">⚠</span>
+            <span>{content.error}</span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -12,7 +12,7 @@ interface BusinessRule { rule: string; }
 interface Config {
   business_name: string;
   business_description: string;
-  db_url_masked: string;
+  db_url: string;
   domain_context: string;
   business_rules: BusinessRule[];
   table_descriptions: Record<string, string>;
@@ -33,6 +33,7 @@ export default function BusinessSetup() {
   useEffect(() => {
     api.get("/api/admin/business-config").then(({ data }) => {
       setConfig(data);
+      if (data.db_url) setDbUrl(data.db_url);  // pre-fill with current URL
     }).catch(() => {});
   }, []);
 
@@ -100,9 +101,9 @@ export default function BusinessSetup() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Database URL</label>
               <div className="flex gap-2">
-                <input type="password" placeholder={config.db_url_masked ? `Current: ${config.db_url_masked}` : "postgres://user:pass@host:5432/db"}
+                <input type="text" placeholder="postgres://user:pass@host:5432/db"
                   value={dbUrl} onChange={(e) => { setDbUrl(e.target.value); setTestStatus("idle"); }}
-                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <button onClick={handleTestConnection} disabled={!dbUrl || testStatus === "testing"}
                   className="px-4 py-2 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
                   {testStatus === "testing" ? <Loader size={14} className="animate-spin" /> : null}
@@ -115,7 +116,7 @@ export default function BusinessSetup() {
                   {testMsg}
                 </p>
               )}
-              <p className="text-xs text-slate-500 mt-1">Leave blank to keep the existing connection.</p>
+              <p className="text-xs text-slate-500 mt-1">Edit to change the connection. Saving with the same URL is safe — it will re-encrypt it unchanged.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Expensive Query Threshold (EXPLAIN cost)</label>

@@ -54,6 +54,10 @@ async def test_run_turn_streams_persists_and_audits(analytics_session, monkeypat
     )
     monkeypatch.setattr("services.chat_service.create_llm_provider", lambda cfg: fake_llm)
 
+    # Health check hits the module-level pool (None in tests) — stub it out.
+    async def _healthy(): return True
+    monkeypatch.setattr("services.chat_service.check_pool_health", _healthy)
+
     pool = FakePool(FakeConn(rows=[{"campus": "IIT"}], explain_cost=10.0))
     gen = await run_turn(analytics_session, pool, user_id=user.id,
                          message="which campuses?", conversation_id=None)

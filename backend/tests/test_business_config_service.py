@@ -43,4 +43,4 @@ async def test_update_config_persists_and_serializes(analytics_session):
     assert out.business_name == "Acme"
     assert out.explain_cost_threshold == 12345
     assert out.business_rules == [{"rule": "r1"}]
-    assert "secret" not in out.db_url_masked
+    assert out.db_url == "postgres://u:secret@host:5432/db"  # full URL returned to superuser

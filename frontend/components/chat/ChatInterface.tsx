@@ -25,7 +25,7 @@ export default function ChatInterface({ conversationId }: Props) {
     appendTextDelta, appendChart, appendTable, appendMetrics, finaliseMessage,
     activeConversationId, setActiveConversation,
     pendingConfirmation, setPendingConfirmation,
-    updateConversationTitle, addConversation,
+    updateConversationTitle, addConversation, setMessageError,
   } = useChatStore();
 
   // Load conversation history when ID changes
@@ -81,8 +81,7 @@ export default function ChatInterface({ conversationId }: Props) {
           setPendingConfirmation(null);
         },
         onError: (msg) => {
-          appendTextDelta(aId, `\n\nError: ${msg}`);
-          finaliseMessage(aId);
+          setMessageError(aId, msg);
           setStreaming(false);
         },
       },
@@ -91,7 +90,7 @@ export default function ChatInterface({ conversationId }: Props) {
   }, [
     activeConversationId, addUserMessage, startAssistantMessage, appendTextDelta,
     appendChart, appendTable, appendMetrics, finaliseMessage, setStreaming,
-    setPendingConfirmation, setActiveConversation, addConversation, router,
+    setPendingConfirmation, setActiveConversation, addConversation, setMessageError, router,
   ]);
 
   function handleStop() {
